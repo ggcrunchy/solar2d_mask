@@ -29,7 +29,7 @@ local type = type
 local unpack = unpack
 
 -- Modules --
-local mask = require("utils.Mask")
+local mask = require("corona_utils.mask")
 
 -- Corona globals --
 local display = display
