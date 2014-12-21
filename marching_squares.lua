@@ -150,12 +150,12 @@ function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 							object.isVisible = state ~= clear
 
 							-- If a cell is full, there is nothing to mask.
-							if state == full then then
+							if state == full then
 								object:setMask(nil)
 
 							-- Otherwise, apply the mask at the given frame. (For empty cells, it is enough
 							-- that the object was made invisible.)
-							elseif state ~= clear then then
+							elseif state ~= clear then
 								reel("set", object, state)
 							end
 						end
