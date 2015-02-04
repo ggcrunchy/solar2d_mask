@@ -23,6 +23,11 @@
 -- [ MIT license: http://www.opensource.org/licenses/mit-license.php ]
 --
 
+-- Modules --
+local require_ex = require("tektite_core.require_ex")
+local gray = require_ex.Lazy("number_sequences.gray")
+local log2 = require_ex.Lazy("bitwise_ops.log2")
+
 -- Exports --
 local M = {}
 
