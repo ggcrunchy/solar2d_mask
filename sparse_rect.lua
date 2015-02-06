@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local ipairs = ipairs
+local pairs = pairs
 
 -- Modules --
 local require_ex = require("tektite_core.require_ex")
@@ -338,155 +339,10 @@ end
 
 --- DOCME
 function M.NewReel (dim, ncols, nrows)
-    -- Start with an unmarked board. For fast lookup, store the neighbor indices; account
-    -- for the borders by pointing to a dummy unmarked tile.
-	local in_use, neighbors, index = { [false] = false }, {}, 1
-
-    for row = 1, nrows do
-        local above, below = row > 1, row < nrows
-
-        for col = 1, ncols do
-            in_use[index], neighbors[index] = false, {
-                up = above and index - ncols,
-                left = col > 1 and index - 1,
-                right = col < ncols and index + 1,
-                down = below and index + ncols
-            }
-
-            index = index + 1
-        end
-	end
-
-    -- Checks if a neighbor suddenly broke off from a larger mass, i.e. became a thin strip
-    local function CheckBroken (from, dir)
-		local next = from[dir]
-
-        return in_use[next] and not in_use[neighbors[next][dir]]
-    end
-
-    -- Checks if two neighbors are in use
-    local function Check2 (index, dir1, dir2)
-        local from = neighbors[index]
-
-        return in_use[from[dir1]] or in_use[from[dir2]]
-    end
-
-    -- Try all the possible patterns defined by a bit stream (where each bit represents an
-	-- "on" or "off" element), accepting all patterns without "thin strips", i.e. elements
-	-- without a neighbor in the horizontal and / or vertical direction. Iterating these
-	-- values in Gray code order maintains pattern coherency, simplifying the updates.
-    local prev_gray, ok = 0
-
-	for gval, i in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
---	for i = 1, 2 ^ (ncols * nrows) do -- skip 0
-        local diff, skip_test = gval - prev_gray
-
-		-- A bit was added:
-		-- If the pattern was intact on the last step, it either remains so (i.e. the new
-		-- element coaelesces with a larger region) or, at worst, a one-element thin strip
-		-- will be introduced. In either case, no integrity check is needed. If the pattern
-		-- is broken, on the other hand, the check proceeds.
-        if diff > 0 then
-			local added_at = log2.Lg_PowerOf2(diff) + 1
-
-			in_use[added_at] = true
-
-            if ok then
-                skip_test = true
-
-                ok = Check2(added_at, "up", "down") and Check2(added_at, "left", "right")
-            end
-
-		-- A bit was removed:
-		-- Check whether the result left behind a thin strip. If so, the pattern is known to
-		-- be broken; we can fail early, forgoing the integrity check.
-        else
-			local removed_at = log2.Lg_PowerOf2(-diff) + 1
-
-            in_use[removed_at] = false
-
-			local from = neighbors[removed_at]
-
-			if CheckBroken(from, "left") or CheckBroken(from, "right") or CheckBroken(from, "up") or CheckBroken(from, "down") then
-				skip_test, ok = true, false
-			end
-        end
-
-        -- Integrity check: ensure that no thin strips exist. If this is satisfied, the
-		-- pattern is considered to be intact.
-        if not skip_test then
-			ok = true
-
-			for i, used in ipairs(in_use) do
-				if used and not (Check2(i, "up", "down") and Check2(i, "left", "right")) then
-					ok = false
-
-					break
-				end
-			end
-		end
-
-		-- if ok then
-			--
-
-		-- Update Gray code state.
-		prev_gray = gval
-	end
-end
-
---[=[
---- Functionality used to pregenerate the tile map.
-
--- Standard library imports --
-local format = string.format
-local ipairs = ipairs
-local popen = io.popen
-
--- Modules --
-local log2 = require("bitwise_ops.log2")
-
--- Exports --
-local M = {}
-
---
-local Dim = 4
-
---- DOCME
-function M.Build (ncols, nrows)
+--[[
 	local xinc, yinc = Dim * ncols + 2, Dim * nrows + 2
 
-    -- Start with an unmarked board. For fast lookup, store the neighbor indices; account
-    -- for the borders by pointing to a dummy unmarked tile.
-	local in_use, neighbors, index = { [false] = false }, {}, 1
-
-    for row = 1, nrows do
-        local above, below = row > 1, row < nrows
-
-        for col = 1, ncols do
-            in_use[index], neighbors[index] = false, {
-                up = above and index - ncols,
-                left = col > 1 and index - 1,
-                right = col < ncols and index + 1,
-                down = below and index + ncols
-            }
-
-            index = index + 1
-        end
-	end
-
-    --
-    local function CheckBroken (from, dir)
-		local next = from[dir]
-
-        return in_use[next] and not in_use[neighbors[next][dir]]
-    end
-
-    --
-    local function Check2 (index, dir1, dir2)
-        local from = neighbors[index]
-
-        return in_use[from[dir1]] or in_use[from[dir2]]
-    end
+    -- snip!
 
 	--
 	local clipboard = popen("clip", "w")
@@ -499,133 +355,148 @@ function M.Build (ncols, nrows)
 	--
 	local penx, peny, cw, nadded = 0, 0, display.contentWidth, 0
 	local ny, nx = 1
+]]
 
-    --
-    local half, inc, prev_gray, ok = 0, 1, 0
+	-- reel("begin", dw, dh)
 
-	for i = 1, 2 ^ (ncols * nrows) do -- skip 0
-        local gray = 0
+    -- Begin with all elements unused. Store neighbor indices for quick lookup.
+	local in_use, neighbors, ni = {}, {}, 1
 
-	    -- Compute the Gray code.
-	    local a, b, arem, flag = i, half, inc, 1
+    for row = 1, nrows do
+        local above, below = row > 1, row < nrows
 
-        repeat
-	        local brem = b % 2
-
-	        if arem ~= brem then
-	            gray = gray + flag
-            end	            
-
-	        a, b = .5 * (a - arem), .5 * (b - brem)
-	        arem = a % 2
-	        flag = flag + flag
-	    until a == b
-
-        -- Compare to previous code. If a bit was added, an intact pattern will remain so
-		-- if the result does not leave behind a thin strip. In any event, when following
-		-- up on an intact pattern, we can forgo the integrity check.
-        local diff, skip_test = gray - prev_gray
-
-        if diff > 0 then
-			local added_at = log2.Lg_PowerOf2(diff) + 1
-
-			in_use[added_at] = true
-
-            if ok then
-                skip_test = true
-
-                ok = Check2(added_at, "up", "down") and Check2(added_at, "left", "right")
-            end
-
-		-- If a bit was removed, check whether the result left behind a thin strip. If so, we
-		-- can fail early, forgoing the integrity check.
-        else
-			local removed_at = log2.Lg_PowerOf2(-diff) + 1
-
-            in_use[removed_at] = false
-
-			local from = neighbors[removed_at]
-
-			if CheckBroken(from, "left") or CheckBroken(from, "right") or CheckBroken(from, "up") or CheckBroken(from, "down") then
-				skip_test, ok = true, false
-			end
+        for col = 1, ncols do
+            neighbors[ni], ni = {
+                up = above and ni - ncols,
+                left = col > 1 and ni - 1,
+                right = col < ncols and ni + 1,
+                down = below and ni + ncols
+            }, ni + 1
         end
+	end
 
-        -- Integrity check: ensure that no thin strips exist. (TODO: efficient incremental solutoin? Trouble is there can be MULTIPLE strips...)
+    -- Checks if both neighbors are in use
+    local function CheckBoth (from, dir1, dir2)
+        return in_use[from[dir1]] and in_use[from[dir2]]
+    end
+
+    -- Checks if either neighbor is in use
+    local function CheckEither (from, dir1, dir2)
+        return in_use[from[dir1]] or in_use[from[dir2]]
+    end
+
+    -- Examine all possible patterns defined by a bit stream (where each bit indicates an
+	-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
+	-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
+	-- code order maintains pattern coherency, which simplifies update handling.
+    local prev_gray, is_intact = 0
+
+	for gval, i in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
+		-- Update Gray value-associated state.
+		local diff, from, skip_test = gval - prev_gray
+		local added = diff > 0
+		local at = log2.Lg_PowerOf2(added and diff or -diff) + 1
+
+		from, in_use[at], prev_gray = neighbors[at], added, gval
+
+		-- If a bit was removed, check whether any of the associated element's neighbors
+		-- became (or already were) filaments. In that case, the pattern is not intact, so
+		-- any integrity check would be redundant.
+		if not added then
+			for dir, next in pairs(from) do
+				if in_use[next] and not in_use[neighbors[next][dir]] then
+					skip_test, is_intact = true, false
+
+					break
+				end
+			end
+
+		-- Otherwise, if the pattern was intact on the previous step, either it remains so
+		-- (i.e. the added element coaelesced with a larger region) or, at worst, a single-
+		-- element filament is introduced. In either case, no integrity check is necessary.
+		-- If the pattern was broken, on the other hand, proceed with it.
+        elseif is_intact then
+			skip_test = true
+			is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
+		end
+
+        -- Integrity check: ensure that no filaments exist. If this condition is satisfied,
+		-- the pattern is considered to be intact.
         if not skip_test then
-			ok = true
+			is_intact = true
 
-			for i, used in ipairs(in_use) do
-				if used and not (Check2(i, "up", "down") and Check2(i, "left", "right")) then
-					ok = false
+			for i, from in ipairs(neighbors) do
+				if in_use[i] and not (CheckEither(from, "up", "down") and CheckEither(from, "left", "right")) then
+					is_intact = false
 
 					break
 				end
 			end
 		end
 
-        --
-        if ok then
+		-- Intact pattern: generate its texels and submit the result to the mask sheet.
+		if is_intact then
 			local index, y = 1, 0
-
+--[[
 			if penx + xinc > cw then
 				penx, peny = 0, peny + yinc
 				nx, ny = nx or nadded, ny + 1
 			end
-
+			^^^ Should be part of sheet logic...
+]]
 			for row = 1, nrows do
 				local inner_row, x = row > 1 and row < nrows, 0
 
 				for col = 1, ncols do
 					if in_use[index] then
-						local clod = display.newRect(to_save, penx + x + 1, peny + y + 1, Dim, Dim)
+					--	local clod = display.newRect(to_save, penx + x + 1, peny + y + 1, Dim, Dim)
 						local around, inner_col, r, g, b = neighbors[index], col > 1 and col < ncols
 
-						if (inner_row and not (in_use[around.up] and in_use[around.down]))
-						or (inner_col and not (in_use[around.left] and in_use[around.right])) then
-							r, g, b = 0x4A, 0x30, 0x00
+						if (inner_row and not CheckBoth(around, "up", "down")) -- sparse?
+						or (inner_col and not CheckBoth(around, "left", "right")) then
+					--		r, g, b = 0x4A, 0x30, 0x00
 						else
-							r, g, b = 0x7B, 0x3F, 0x00
+					--		r, g, b = 0x7B, 0x3F, 0x00
 						end
 
-						r, g, b = r / 255, g / 255, b / 255
+					--	r, g, b = r / 255, g / 255, b / 255
 
-						clod:setFillColor(r, g, b)
+					--	clod:setFillColor(r, g, b)
 
-						--
+						-- border...
 						if row == 1 then
-							display.newRect(to_save, penx + x + 1, peny + y, Dim, 1):setFillColor(r, g, b)
+					--		display.newRect(to_save, penx + x + 1, peny + y, Dim, 1):setFillColor(r, g, b)
 						elseif row == nrows then
-							display.newRect(to_save, penx + x + 1, peny + y + Dim + 1, Dim, 1):setFillColor(r, g, b)
+					--		display.newRect(to_save, penx + x + 1, peny + y + Dim + 1, Dim, 1):setFillColor(r, g, b)
 						end
 
-						--
+						-- border...
 						if col == 1 then
-							display.newRect(to_save, penx + x, peny + y + 1, 1, Dim):setFillColor(r, g, b)
+					--		display.newRect(to_save, penx + x, peny + y + 1, 1, Dim):setFillColor(r, g, b)
 						elseif col == ncols then
-							display.newRect(to_save, penx + x + Dim + 1, peny + y + 1, 1, Dim):setFillColor(r, g, b)
+					--		display.newRect(to_save, penx + x + Dim + 1, peny + y + 1, 1, Dim):setFillColor(r, g, b)
 						end
 					end
 
-					index, x = index + 1, x + Dim
+			--		index, x = index + 1, x + Dim
 				end
 
-				y = y + Dim
+			--	y = y + Dim
 			end
 
-			penx = penx + xinc
-
+--			penx = penx + xinc <- In sheet?
+--[[
 			if clipboard then
 				clipboard:write(nadded % 10 == 0 and "\n\t" or " ", format("0x%04x", gray), ",")
 			end
-
-			nadded = nadded + 1
-        end
-
-		-- Update Gray code state.
-		half, inc, prev_gray = half + inc, 1 - inc, gray
+			^^ Enhance sheets to do some of this... options: into a table, into a database entry, into the image file's metadata, etc.
+			reel("frame", MakeFrame, state, v[1] == comp_color)
+]]
+--			nadded = nadded + 1 <- Just frame logic?
+		end
 	end
 
+--[[
 	--
 	if clipboard then
 		clipboard:write("\n}")
@@ -642,11 +513,11 @@ function M.Build (ncols, nrows)
 --merp:removeSelf()
 --print(nx, ny)
 	to_save:removeSelf()
+	-- ^^^ All sheet logic?
+]]
+	--
+	-- reel("end", "__SparseRect" .. dim .. "__.png", opts and opts.base_dir)
 end
-
--- Export the module.
-return M
-]=]
 
 -- Cache module members.
 _NewReel_ = M.NewReel
