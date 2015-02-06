@@ -32,6 +32,9 @@ local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
 local log2 = require_ex.Lazy("bitwise_ops.log2")
 
+-- Corona globals --
+local display = display
+
 -- Cached module references --
 local _NewReel_
 
@@ -337,8 +340,20 @@ end
 
 ]=]
 
+--
+local function NewRect (group, x, y, dimx, dimy, fill, a)
+	local rect = display.newRect(group, 0, 0, dimx, dimy)
+
+	rect.anchorX, rect.x = 0, x
+	rect.anchorY, rect.y = 0, y
+
+	rect:setFillColor(fill, a)
+end
+
 --- DOCME
-function M.NewReel (dim, ncols, nrows)
+function M.NewReel (ncols, nrows, dimx, dimy)
+	dimx = dimx or 1
+	dimy = dimy or dimx
 --[[
 	local xinc, yinc = Dim * ncols + 2, Dim * nrows + 2
 
@@ -385,13 +400,57 @@ function M.NewReel (dim, ncols, nrows)
         return in_use[from[dir1]] or in_use[from[dir2]]
     end
 
+	--
+	local function MakeFrame (cgroup, fg, dim, index)
+		local ci, y = 1, 0
+--[[
+			if penx + xinc > cw then
+				penx, peny = 0, peny + yinc
+				nx, ny = nx or nadded, ny + 1
+			end
+			^^^ Should be part of sheet logic...
+]]
+		for row = 1, nrows do
+			local inner_row, x = row > 1 and row < nrows, 0
+
+			for col = 1, ncols do
+				if in_use[ci] then
+					local around, inner_col, a = neighbors[ci], col > 1 and col < ncols
+
+					if (inner_row and not CheckBoth(around, "up", "down")) -- sparse?
+					or (inner_col and not CheckBoth(around, "left", "right")) then
+				--		a = ?
+					else
+				--		a = ?
+					end
+
+					NewRect(cgroup, x + 1, y + 1, dimx, dimy, fg, a)
+
+					-- border...
+					if not inner_row then
+						NewRect(cgroup, x + 1, y + (row == nrows and dimy + 1 or 0), dimx, 1, fg, a)
+					end
+
+					-- border...
+					if not inner_col then
+						NewRect(cgroup, x + (col == ncols and dimx + 1 or 0), y + 1, 1, dimy, fg, a)
+					end
+				end
+
+				ci, x = ci + 1, x + dimx
+			end
+
+			y = y + dimy
+		end
+	end
+
     -- Examine all possible patterns defined by a bit stream (where each bit indicates an
 	-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 	-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 	-- code order maintains pattern coherency, which simplifies update handling.
     local prev_gray, is_intact = 0
 
-	for gval, i in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
+	for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
 		-- Update Gray value-associated state.
 		local diff, from, skip_test = gval - prev_gray
 		local added = diff > 0
@@ -436,54 +495,7 @@ function M.NewReel (dim, ncols, nrows)
 
 		-- Intact pattern: generate its texels and submit the result to the mask sheet.
 		if is_intact then
-			local index, y = 1, 0
---[[
-			if penx + xinc > cw then
-				penx, peny = 0, peny + yinc
-				nx, ny = nx or nadded, ny + 1
-			end
-			^^^ Should be part of sheet logic...
-]]
-			for row = 1, nrows do
-				local inner_row, x = row > 1 and row < nrows, 0
-
-				for col = 1, ncols do
-					if in_use[index] then
-					--	local clod = display.newRect(to_save, penx + x + 1, peny + y + 1, Dim, Dim)
-						local around, inner_col, r, g, b = neighbors[index], col > 1 and col < ncols
-
-						if (inner_row and not CheckBoth(around, "up", "down")) -- sparse?
-						or (inner_col and not CheckBoth(around, "left", "right")) then
-					--		r, g, b = 0x4A, 0x30, 0x00
-						else
-					--		r, g, b = 0x7B, 0x3F, 0x00
-						end
-
-					--	r, g, b = r / 255, g / 255, b / 255
-
-					--	clod:setFillColor(r, g, b)
-
-						-- border...
-						if row == 1 then
-					--		display.newRect(to_save, penx + x + 1, peny + y, Dim, 1):setFillColor(r, g, b)
-						elseif row == nrows then
-					--		display.newRect(to_save, penx + x + 1, peny + y + Dim + 1, Dim, 1):setFillColor(r, g, b)
-						end
-
-						-- border...
-						if col == 1 then
-					--		display.newRect(to_save, penx + x, peny + y + 1, 1, Dim):setFillColor(r, g, b)
-						elseif col == ncols then
-					--		display.newRect(to_save, penx + x + Dim + 1, peny + y + 1, 1, Dim):setFillColor(r, g, b)
-						end
-					end
-
-			--		index, x = index + 1, x + Dim
-				end
-
-			--	y = y + Dim
-			end
-
+		--	reel("frame", MakeFrame, gval, is_white) -- is_white by default...
 --			penx = penx + xinc <- In sheet?
 --[[
 			if clipboard then
