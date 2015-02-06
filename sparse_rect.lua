@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local assert = assert
 local ipairs = ipairs
 local pairs = pairs
 
@@ -351,9 +352,11 @@ local function NewRect (group, x, y, dimx, dimy, fill, a)
 end
 
 --- DOCME
-function M.NewReel (ncols, nrows, dimx, dimy)
-	dimx = dimx or 1
-	dimy = dimy or dimx
+function M.NewReel (opts)
+	local ncols = assert(opts and opts.ncols, "Missing number of columns")
+	local nrows = assert(opts and opts.nrows, "Missing number of rows")
+	local dimx = opts.dimx or 1
+	local dimy = opts.dimy or dimx
 --[[
 	local xinc, yinc = Dim * ncols + 2, Dim * nrows + 2
 
@@ -415,13 +418,11 @@ function M.NewReel (ncols, nrows, dimx, dimy)
 
 			for col = 1, ncols do
 				if in_use[ci] then
-					local around, inner_col, a = neighbors[ci], col > 1 and col < ncols
+					local around, inner_col, a = neighbors[ci], col > 1 and col < ncols, 1
 
 					if (inner_row and not CheckBoth(around, "up", "down")) -- sparse?
 					or (inner_col and not CheckBoth(around, "left", "right")) then
-				--		a = ?
-					else
-				--		a = ?
+						a = .65
 					end
 
 					NewRect(cgroup, x + 1, y + 1, dimx, dimy, fg, a)
