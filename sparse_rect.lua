@@ -32,19 +32,20 @@ local pairs = pairs
 local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
 local log2 = require_ex.Lazy("bitwise_ops.log2")
+local mask = require("corona_utils.mask")
 
 -- Corona globals --
 local display = display
 
 -- Cached module references --
-local _NewReel_
+local _NewSheet_
 
 -- Exports --
 local M = {}
 
 --- DOCME
 function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
-	local reel, clear, full = _NewReel_(dim, w / ncols, h / nrows, opts)--, Clear, Full
+	local reel, clear, full = _NewSheet_(dim, w / ncols, h / nrows, opts)--, Clear, Full
 
 	--
 end
@@ -342,38 +343,20 @@ end
 ]=]
 
 --
-local function NewRect (group, x, y, dimx, dimy, fill, a)
+local function NewRect (group, x, y, dimx, dimy, fill)
 	local rect = display.newRect(group, 0, 0, dimx, dimy)
 
 	rect.anchorX, rect.x = 0, x
 	rect.anchorY, rect.y = 0, y
 
-	rect:setFillColor(fill, a)
+	rect:setFillColor(fill)
 end
 
 --- DOCME
 function M.NewReel (opts)
-	local ncols = assert(opts and opts.ncols, "Missing number of columns")
-	local nrows = assert(opts and opts.nrows, "Missing number of rows")
-	local dimx = opts.dimx or 1
-	local dimy = opts.dimy or dimx
---[[
-	local xinc, yinc = Dim * ncols + 2, Dim * nrows + 2
-
-    -- snip!
-
-	--
-	local clipboard = popen("clip", "w")
-	local to_save = display.newGroup()
-
-	if clipboard then
-		clipboard:write("{")
-	end
-
-	--
-	local penx, peny, cw, nadded = 0, 0, display.contentWidth, 0
-	local ny, nx = 1
-]]
+	local sheet = mask.NewSheet(opts)
+	local ncols = assert(opts.ncols, "Missing number of columns")
+	local nrows = assert(opts.nrows, "Missing number of rows")
 
 	-- reel("begin", dw, dh)
 
@@ -404,38 +387,20 @@ function M.NewReel (opts)
     end
 
 	--
-	local function MakeFrame (cgroup, fg, dim, index)
+	local function MakeFrame (cgroup, fg, dimx, dimy, index)
 		local ci, y = 1, 0
---[[
-			if penx + xinc > cw then
-				penx, peny = 0, peny + yinc
-				nx, ny = nx or nadded, ny + 1
-			end
-			^^^ Should be part of sheet logic...
-]]
+
 		for row = 1, nrows do
 			local inner_row, x = row > 1 and row < nrows, 0
 
 			for col = 1, ncols do
 				if in_use[ci] then
-					local around, inner_col, a = neighbors[ci], col > 1 and col < ncols, 1
+					local around = neighbors[ci]
+					local on_edge = inner_row and not CheckBoth(around, "up", "down")
 
-					if (inner_row and not CheckBoth(around, "up", "down")) -- sparse?
-					or (inner_col and not CheckBoth(around, "left", "right")) then
-						a = .65
-					end
+					on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
 
-					NewRect(cgroup, x + 1, y + 1, dimx, dimy, fg, a)
-
-					-- border...
-					if not inner_row then
-						NewRect(cgroup, x + 1, y + (row == nrows and dimy + 1 or 0), dimx, 1, fg, a)
-					end
-
-					-- border...
-					if not inner_col then
-						NewRect(cgroup, x + (col == ncols and dimx + 1 or 0), y + 1, 1, dimy, fg, a)
-					end
+					NewRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
 				end
 
 				ci, x = ci + 1, x + dimx
@@ -449,7 +414,7 @@ function M.NewReel (opts)
 	-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 	-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 	-- code order maintains pattern coherency, which simplifies update handling.
-    local prev_gray, is_intact = 0
+    local prev_gray, count, is_white, is_intact = 0, 0, not opts.flip_color
 
 	for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
 		-- Update Gray value-associated state.
@@ -494,46 +459,20 @@ function M.NewReel (opts)
 			end
 		end
 
-		-- Intact pattern: generate its texels and submit the result to the mask sheet.
+		-- Intact pattern: submit its texels to the mask sheet.
 		if is_intact then
-		--	reel("frame", MakeFrame, gval, is_white) -- is_white by default...
---			penx = penx + xinc <- In sheet?
---[[
-			if clipboard then
-				clipboard:write(nadded % 10 == 0 and "\n\t" or " ", format("0x%04x", gray), ",")
-			end
-			^^ Enhance sheets to do some of this... options: into a table, into a database entry, into the image file's metadata, etc.
-			reel("frame", MakeFrame, state, v[1] == comp_color)
-]]
---			nadded = nadded + 1 <- Just frame logic?
+			count = count + 1
+
+			sheet("frame", MakeFrame, count, is_white)
 		end
 	end
 
---[[
-	--
-	if clipboard then
-		clipboard:write("\n}")
-		clipboard:close()
-	end
-
-	local dark = display.newRect(to_save, 0, 0, to_save.width, to_save.height)
-
-	dark:setFillColor(0)
-	dark:toBack()
-
-	display.save(to_save, "NAME")
---local merp = display.captureBounds(to_save.contentBounds, true)
---merp:removeSelf()
---print(nx, ny)
-	to_save:removeSelf()
-	-- ^^^ All sheet logic?
-]]
 	--
 	-- reel("end", "__SparseRect" .. dim .. "__.png", opts and opts.base_dir)
 end
 
 -- Cache module members.
-_NewReel_ = M.NewReel
+_NewSheet_ = M.NewSheet
 
 -- Export the module.
 return M
