@@ -353,12 +353,10 @@ local function NewRect (group, x, y, dimx, dimy, fill)
 end
 
 --- DOCME
-function M.NewReel (opts)
+function M.NewSheet (opts)
 	local sheet = mask.NewSheet(opts)
 	local ncols = assert(opts.ncols, "Missing number of columns")
 	local nrows = assert(opts.nrows, "Missing number of rows")
-
-	-- reel("begin", dw, dh)
 
     -- Begin with all elements unused. Store neighbor indices for quick lookup.
 	local in_use, neighbors, ni = {}, {}, 1
@@ -464,11 +462,15 @@ function M.NewReel (opts)
 			count = count + 1
 
 			sheet("frame", MakeFrame, count, is_white)
+			-- sheet:AddFrame(MakeFrame, count, is_white)
 		end
 	end
 
 	--
 	-- reel("end", "__SparseRect" .. dim .. "__.png", opts and opts.base_dir)
+	-- sheet:Commit()
+
+	return sheet
 end
 
 -- Cache module members.
