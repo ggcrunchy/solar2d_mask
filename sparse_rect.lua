@@ -33,6 +33,7 @@ local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
 local log2 = require_ex.Lazy("bitwise_ops.log2")
 local mask = require("corona_utils.mask")
+local table_funcs = require("tektite_core.table.funcs")
 
 -- Corona globals --
 local display = display
@@ -354,6 +355,10 @@ end
 
 --- DOCME
 function M.NewSheet (opts)
+	opts = table_funcs.Copy(opts)
+
+	opts.name = "SparseRect"
+
 	local sheet = mask.NewSheet(opts)
 	local ncols = assert(opts.ncols, "Missing number of columns")
 	local nrows = assert(opts.nrows, "Missing number of rows")
@@ -443,8 +448,8 @@ function M.NewSheet (opts)
 			is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
 		end
 
-        -- Integrity check: ensure that no filaments exist. If this condition is satisfied,
-		-- the pattern is considered to be intact.
+        -- Integrity check: ensure that no filaments exist. The pattern is considered to be
+		-- intact when this condition is satisfied.
         if not skip_test then
 			is_intact = true
 
@@ -461,14 +466,12 @@ function M.NewSheet (opts)
 		if is_intact then
 			count = count + 1
 
-			sheet("frame", MakeFrame, count, is_white)
-			-- sheet:AddFrame(MakeFrame, count, is_white)
+			sheet:AddFrame(MakeFrame, count, is_white)
 		end
 	end
 
 	--
-	-- reel("end", "__SparseRect" .. dim .. "__.png", opts and opts.base_dir)
-	-- sheet:Commit()
+	sheet:Commit()
 
 	return sheet
 end
