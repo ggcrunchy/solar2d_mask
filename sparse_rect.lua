@@ -360,118 +360,121 @@ function M.NewSheet (opts)
 	opts.name = "SparseRect"
 
 	local sheet = mask.NewSheet(opts)
-	local ncols = assert(opts.ncols, "Missing number of columns")
-	local nrows = assert(opts.nrows, "Missing number of rows")
 
-    -- Begin with all elements unused. Store neighbor indices for quick lookup.
-	local in_use, neighbors, ni = {}, {}, 1
+	if not sheet:IsLoaded() then
+		local ncols = assert(opts.ncols, "Missing number of columns")
+		local nrows = assert(opts.nrows, "Missing number of rows")
 
-    for row = 1, nrows do
-        local above, below = row > 1, row < nrows
-
-        for col = 1, ncols do
-            neighbors[ni], ni = {
-                up = above and ni - ncols,
-                left = col > 1 and ni - 1,
-                right = col < ncols and ni + 1,
-                down = below and ni + ncols
-            }, ni + 1
-        end
-	end
-
-    -- Checks if both neighbors are in use
-    local function CheckBoth (from, dir1, dir2)
-        return in_use[from[dir1]] and in_use[from[dir2]]
-    end
-
-    -- Checks if either neighbor is in use
-    local function CheckEither (from, dir1, dir2)
-        return in_use[from[dir1]] or in_use[from[dir2]]
-    end
-
-	--
-	local function MakeFrame (cgroup, fg, dimx, dimy, index)
-		local ci, y = 1, 0
+		-- Begin with all elements unused. Store neighbor indices for quick lookup.
+		local in_use, neighbors, ni = {}, {}, 1
 
 		for row = 1, nrows do
-			local inner_row, x = row > 1 and row < nrows, 0
+			local above, below = row > 1, row < nrows
 
 			for col = 1, ncols do
-				if in_use[ci] then
-					local around = neighbors[ci]
-					local on_edge = inner_row and not CheckBoth(around, "up", "down")
+				neighbors[ni], ni = {
+					up = above and ni - ncols,
+					left = col > 1 and ni - 1,
+					right = col < ncols and ni + 1,
+					down = below and ni + ncols
+				}, ni + 1
+			end
+		end
 
-					on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
+		-- Checks if both neighbors are in use
+		local function CheckBoth (from, dir1, dir2)
+			return in_use[from[dir1]] and in_use[from[dir2]]
+		end
 
-					NewRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
+		-- Checks if either neighbor is in use
+		local function CheckEither (from, dir1, dir2)
+			return in_use[from[dir1]] or in_use[from[dir2]]
+		end
+
+		--
+		local function MakeFrame (cgroup, fg, dimx, dimy, index)
+			local ci, y = 1, 0
+
+			for row = 1, nrows do
+				local inner_row, x = row > 1 and row < nrows, 0
+
+				for col = 1, ncols do
+					if in_use[ci] then
+						local around = neighbors[ci]
+						local on_edge = inner_row and not CheckBoth(around, "up", "down")
+
+						on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
+
+						NewRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
+					end
+
+					ci, x = ci + 1, x + dimx
 				end
 
-				ci, x = ci + 1, x + dimx
+				y = y + dimy
+			end
+		end
+
+		-- Examine all possible patterns defined by a bit stream (where each bit indicates an
+		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
+		-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
+		-- code order maintains pattern coherency, which simplifies update handling.
+		local prev_gray, count, is_white, is_intact = 0, 0, not opts.flip_color
+
+		for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
+			-- Update Gray value-associated state.
+			local diff, from, skip_test = gval - prev_gray
+			local added = diff > 0
+			local at = log2.Lg_PowerOf2(added and diff or -diff) + 1
+
+			from, in_use[at], prev_gray = neighbors[at], added, gval
+
+			-- If a bit was removed, check whether any of the associated element's neighbors
+			-- became (or already were) filaments. In that case, the pattern is not intact,
+			-- so any integrity check would be redundant.
+			if not added then
+				for dir, next in pairs(from) do
+					if in_use[next] and not in_use[neighbors[next][dir]] then
+						skip_test, is_intact = true, false
+
+						break
+					end
+				end
+
+			-- Otherwise, if the pattern was intact on the previous step, either it remains
+			-- so (i.e. the added element coaelesced with a larger region) or, at worst, a
+			-- single-element filament is introduced. In either case, no integrity check is
+			-- necessary. If the pattern was broken, on the other hand, proceed with it.
+			elseif is_intact then
+				skip_test = true
+				is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
 			end
 
-			y = y + dimy
+			-- Integrity check: ensure that no filaments exist. The pattern is considered to
+			-- be intact when this condition is satisfied.
+			if not skip_test then
+				is_intact = true
+
+				for i, from in ipairs(neighbors) do
+					if in_use[i] and not (CheckEither(from, "up", "down") and CheckEither(from, "left", "right")) then
+						is_intact = false
+
+						break
+					end
+				end
+			end
+
+			-- Intact pattern: submit its texels to the mask sheet.
+			if is_intact then
+				count = count + 1
+
+				sheet:AddFrame(MakeFrame, count, is_white)
+			end
 		end
+
+		--
+		sheet:Commit()
 	end
-
-    -- Examine all possible patterns defined by a bit stream (where each bit indicates an
-	-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
-	-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
-	-- code order maintains pattern coherency, which simplifies update handling.
-    local prev_gray, count, is_white, is_intact = 0, 0, not opts.flip_color
-
-	for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
-		-- Update Gray value-associated state.
-		local diff, from, skip_test = gval - prev_gray
-		local added = diff > 0
-		local at = log2.Lg_PowerOf2(added and diff or -diff) + 1
-
-		from, in_use[at], prev_gray = neighbors[at], added, gval
-
-		-- If a bit was removed, check whether any of the associated element's neighbors
-		-- became (or already were) filaments. In that case, the pattern is not intact, so
-		-- any integrity check would be redundant.
-		if not added then
-			for dir, next in pairs(from) do
-				if in_use[next] and not in_use[neighbors[next][dir]] then
-					skip_test, is_intact = true, false
-
-					break
-				end
-			end
-
-		-- Otherwise, if the pattern was intact on the previous step, either it remains so
-		-- (i.e. the added element coaelesced with a larger region) or, at worst, a single-
-		-- element filament is introduced. In either case, no integrity check is necessary.
-		-- If the pattern was broken, on the other hand, proceed with it.
-        elseif is_intact then
-			skip_test = true
-			is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
-		end
-
-        -- Integrity check: ensure that no filaments exist. The pattern is considered to be
-		-- intact when this condition is satisfied.
-        if not skip_test then
-			is_intact = true
-
-			for i, from in ipairs(neighbors) do
-				if in_use[i] and not (CheckEither(from, "up", "down") and CheckEither(from, "left", "right")) then
-					is_intact = false
-
-					break
-				end
-			end
-		end
-
-		-- Intact pattern: submit its texels to the mask sheet.
-		if is_intact then
-			count = count + 1
-
-			sheet:AddFrame(MakeFrame, count, is_white)
-		end
-	end
-
-	--
-	sheet:Commit()
 
 	return sheet
 end
