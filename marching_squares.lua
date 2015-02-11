@@ -100,6 +100,16 @@ local function Correction (pitch, total, how)
 end
 
 --- DOCME
+-- @callable get_object
+-- @uint dim
+-- @uint w
+-- @uint h
+-- @uint ncols
+-- @uint nrows
+-- @ptable[opt] opts
+-- @todo ^^^ May need revision!
+-- @treturn function F
+-- @treturn function G
 function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 	local reel, clear, full = _NewReel_(dim, w / ncols, h / nrows, opts), Clear, Full
 	local cleared, dirty_cells, ndirty, id = {}, {}, 0, 0
@@ -192,6 +202,12 @@ function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 end
 
 --- DOCME
+-- @uint dim
+-- @number dw
+-- @number dh
+-- @ptable[opt] opts
+-- @todo ^^^ May need revision!
+-- @treturn MaskSheet MS
 function M.NewReel (dim, dw, dh, opts)
 	local reel = mask.NewReel(dim)
 

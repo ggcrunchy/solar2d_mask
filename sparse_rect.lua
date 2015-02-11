@@ -351,9 +351,12 @@ local function NewRect (group, x, y, dimx, dimy, fill)
 	rect.anchorY, rect.y = 0, y
 
 	rect:setFillColor(fill)
+	-- ^^ TODO: Stash?
 end
 
 --- DOCME
+-- @ptable opts
+-- @treturn MaskSheet MS
 function M.NewSheet (opts)
 	opts = table_funcs.Copy(opts)
 
@@ -391,8 +394,8 @@ function M.NewSheet (opts)
 			return in_use[from[dir1]] or in_use[from[dir2]]
 		end
 
-		--
-		local function MakeFrame (cgroup, fg, dimx, dimy, index)
+		-- Frame factory
+		local function MakeFrame (cgroup, fg, dimx, dimy)--, index)
 			local ci, y = 1, 0
 
 			for row = 1, nrows do
@@ -414,6 +417,8 @@ function M.NewSheet (opts)
 				y = y + dimy
 			end
 		end
+
+		-- After func, for stashing?
 
 		-- Examine all possible patterns defined by a bit stream (where each bit indicates an
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
@@ -472,7 +477,6 @@ function M.NewSheet (opts)
 			end
 		end
 
-		--
 		sheet:Commit()
 	end
 
