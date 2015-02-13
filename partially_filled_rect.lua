@@ -1,4 +1,5 @@
---- Generators for masks based on marching squares.
+--- This module provides operations to generate and use rectangular, sheet-style masks, where
+-- individual frames 
  
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -343,17 +344,6 @@ end
 
 ]=]
 
---
-local function NewRect (group, x, y, dimx, dimy, fill)
-	local rect = display.newRect(group, 0, 0, dimx, dimy)
-
-	rect.anchorX, rect.x = 0, x
-	rect.anchorY, rect.y = 0, y
-
-	rect:setFillColor(fill)
-	-- ^^ TODO: Stash?
-end
-
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
@@ -395,7 +385,7 @@ function M.NewSheet (opts)
 		end
 
 		-- Frame factory
-		local function MakeFrame (cgroup, fg, dimx, dimy)--, index)
+		local function MakeFrame (cgroup, fg, dimx, dimy)
 			local ci, y = 1, 0
 
 			for row = 1, nrows do
@@ -408,7 +398,7 @@ function M.NewSheet (opts)
 
 						on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
 
-						NewRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
+						sheet:GetRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
 					end
 
 					ci, x = ci + 1, x + dimx
@@ -418,7 +408,12 @@ function M.NewSheet (opts)
 			end
 		end
 
-		-- After func, for stashing?
+		-- After function, to clean up stash
+		local function StashRects (cgroup)
+			for i = cgroup.numChildren, 1, -1 do
+				sheet:StashRect(cgroup[i])
+			end
+		end
 
 		-- Examine all possible patterns defined by a bit stream (where each bit indicates an
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
@@ -473,7 +468,7 @@ function M.NewSheet (opts)
 			if is_intact then
 				count = count + 1
 
-				sheet:AddFrame(MakeFrame, count, is_white)
+				sheet:AddFrame(MakeFrame, count, is_white, StashRects)
 			end
 		end
 
