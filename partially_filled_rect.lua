@@ -398,13 +398,13 @@ function M.NewSheet (opts)
 
 						on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
 
-						sheet:GetRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg)
+						sheet:GetRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg) -- <- dims...
 					end
 
-					ci, x = ci + 1, x + dimx
+					ci, x = ci + 1, x + dimx -- <- should be pdimx (pixel dimx)
 				end
 
-				y = y + dimy
+				y = y + dimy -- <- should be pdimy (pixel dimy)
 			end
 		end
 
