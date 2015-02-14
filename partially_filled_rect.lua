@@ -25,7 +25,6 @@
 --
 
 -- Standard library imports --
-local assert = assert
 local ipairs = ipairs
 local pairs = pairs
 
@@ -35,9 +34,6 @@ local gray = require_ex.Lazy("number_sequences.gray")
 local log2 = require_ex.Lazy("bitwise_ops.log2")
 local mask = require("corona_utils.mask")
 local table_funcs = require("tektite_core.table.funcs")
-
--- Corona globals --
-local display = display
 
 -- Cached module references --
 local _NewSheet_
@@ -346,17 +342,19 @@ end
 
 --- DOCME
 -- @ptable opts
+-- @todo Option to accept filaments? (Bigger image, but otherwise probably fine)
 -- @treturn MaskSheet MS
 function M.NewSheet (opts)
 	opts = table_funcs.Copy(opts)
 
-	opts.name = "SparseRect"
+	opts.name, opts.w, opts.h = "SparseRect"
 
-	local sheet = mask.NewSheet(opts)
+	local method = opts.get_data and "NewSheet_Data" or "NewSheet"
+	local sheet = mask[method](opts)
 
 	if not sheet:IsLoaded() then
-		local ncols = assert(opts.ncols, "Missing number of columns")
-		local nrows = assert(opts.nrows, "Missing number of rows")
+		local ncols, pixw = opts.ncols, opts.pixw
+		local nrows, pixh = opts.nrows, opts.pixh
 
 		-- Begin with all elements unused. Store neighbor indices for quick lookup.
 		local in_use, neighbors, ni = {}, {}, 1
@@ -384,34 +382,39 @@ function M.NewSheet (opts)
 			return in_use[from[dir1]] or in_use[from[dir2]]
 		end
 
-		-- Frame factory
-		local function MakeFrame (cgroup, fg, dimx, dimy)
-			local ci, y = 1, 0
+		-- If not just getting data, create the frame logic.
+		local After, MakeFrame
 
-			for row = 1, nrows do
-				local inner_row, x = row > 1 and row < nrows, 0
+		if method == "NewSheet" then
+			-- After function: clean up stash
+			function After (cgroup)
+				for i = cgroup.numChildren, 1, -1 do
+					sheet:StashRect(cgroup[i])
+				end
+			end
 
-				for col = 1, ncols do
-					if in_use[ci] then
-						local around = neighbors[ci]
-						local on_edge = inner_row and not CheckBoth(around, "up", "down")
+			-- Frame factory
+			function MakeFrame (cgroup, fg)
+				local ci, y = 1, 0
 
-						on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
+				for row = 1, nrows do
+					local inner_row, x = row > 1 and row < nrows, 0
 
-						sheet:GetRect(cgroup, x + 1, y + 1, dimx, dimy, on_edge and .65 or fg) -- <- dims...
+					for col = 1, ncols do
+						if in_use[ci] then
+							local around = neighbors[ci]
+							local on_edge = inner_row and not CheckBoth(around, "up", "down")
+
+							on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
+
+							sheet:GetRect(cgroup, x + 1, y + 1, pixw, pixh, on_edge and .65 or fg)
+						end
+
+						ci, x = ci + 1, x + pixw
 					end
 
-					ci, x = ci + 1, x + dimx -- <- should be pdimx (pixel dimx)
+					y = y + pixh
 				end
-
-				y = y + dimy -- <- should be pdimy (pixel dimy)
-			end
-		end
-
-		-- After function, to clean up stash
-		local function StashRects (cgroup)
-			for i = cgroup.numChildren, 1, -1 do
-				sheet:StashRect(cgroup[i])
 			end
 		end
 
@@ -464,11 +467,15 @@ function M.NewSheet (opts)
 				end
 			end
 
-			-- Intact pattern: submit its texels to the mask sheet.
+			-- Intact pattern: submit its texels (or data) to the mask sheet.
 			if is_intact then
 				count = count + 1
 
-				sheet:AddFrame(MakeFrame, count, is_white, StashRects)
+				if method == "NewSheet" then
+					sheet:AddFrame(MakeFrame, count, is_white, After)
+				else
+					sheet:AddFrame(count)
+				end
 			end
 		end
 
