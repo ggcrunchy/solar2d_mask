@@ -344,17 +344,18 @@ end
 -- @ptable opts
 -- @todo Option to accept filaments? (Bigger image, but otherwise probably fine)
 -- @treturn MaskSheet MS
+-- @return ARG
 function M.NewSheet (opts)
 	opts = table_funcs.Copy(opts)
 
-	opts.name, opts.w, opts.h = "SparseRect"
+	opts.name, opts.dimx, opts.dimy, opts.dim = "SparseRect"
 
 	local method = opts.get_data and "NewSheet_Data" or "NewSheet"
-	local sheet = mask[method](opts)
+	local sheet, arg = mask[method](opts), opts.arg
 
 	if not sheet:IsLoaded() then
-		local ncols, pixw = opts.ncols, opts.pixw
-		local nrows, pixh = opts.nrows, opts.pixh
+		local ncols, pixw = opts.npix_cols or opts.npix, opts.pixw or opts.pix_dim
+		local nrows, pixh = opts.npix_rows or opts.npix, opts.pixh or opts.pix_dim
 
 		-- Begin with all elements unused. Store neighbor indices for quick lookup.
 		local in_use, neighbors, ni = {}, {}, 1
@@ -422,13 +423,13 @@ function M.NewSheet (opts)
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 		-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 		-- code order maintains pattern coherency, which simplifies update handling.
-		local prev_gray, count, is_white, is_intact = 0, 0, not opts.flip_color
+		local prev_gray, is_white, is_intact = 0, not opts.flip_color
 
 		for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
 			-- Update Gray value-associated state.
 			local diff, from, skip_test = gval - prev_gray
 			local added = diff > 0
-			local at = log2.Lg_PowerOf2(added and diff or -diff) + 1
+			local at = log2.Lg_Floor(added and diff or -diff) + 1
 
 			from, in_use[at], prev_gray = neighbors[at], added, gval
 
@@ -469,20 +470,18 @@ function M.NewSheet (opts)
 
 			-- Intact pattern: submit its texels (or data) to the mask sheet.
 			if is_intact then
-				count = count + 1
-
 				if method == "NewSheet" then
-					sheet:AddFrame(MakeFrame, count, is_white, After)
+					sheet:AddFrame(MakeFrame, gval, is_white, After)
 				else
-					sheet:AddFrame(count)
+					sheet:AddFrame(gval)
 				end
 			end
 		end
 
-		sheet:Commit()
+		arg = sheet:Commit()
 	end
 
-	return sheet
+	return sheet, arg
 end
 
 -- Cache module members.
