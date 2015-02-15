@@ -408,7 +408,7 @@ function M.NewSheet (opts)
 
 							on_edge = on_edge or (col > 1 and col < ncols and not CheckBoth(around, "left", "right"))
 
-							sheet:GetRect(cgroup, x + 1, y + 1, pixw, pixh, on_edge and .65 or fg)
+							sheet:GetRect(cgroup, x, y, pixw, pixh, on_edge and .65 or fg)
 						end
 
 						ci, x = ci + 1, x + pixw
@@ -423,7 +423,7 @@ function M.NewSheet (opts)
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 		-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 		-- code order maintains pattern coherency, which simplifies update handling.
-		local prev_gray, is_white, is_intact = 0, not opts.flip_color
+		local prev_gray, is_white, is_intact = 0, not not opts.flip_color
 
 		for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
 			-- Update Gray value-associated state.
