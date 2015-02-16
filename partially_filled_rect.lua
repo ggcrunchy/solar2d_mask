@@ -342,16 +342,15 @@ end
 
 --- DOCME
 -- @ptable opts
--- @todo Option to accept filaments? (Bigger image, but otherwise probably fine)
 -- @treturn MaskSheet MS
 -- @return ARG
 function M.NewSheet (opts)
 	opts = table_funcs.Copy(opts)
 
-	opts.name, opts.dimx, opts.dimy, opts.dim = "SparseRect"
+	opts.name, opts.dimx, opts.dimy, opts.dim = "PartiallyFilledRect"
 
 	local method = opts.get_data and "NewSheet_Data" or "NewSheet"
-	local sheet, arg = mask[method](opts), opts.arg
+	local sheet, data = mask[method](opts), opts.data
 
 	if not sheet:IsLoaded() then
 		local ncols, pixw = opts.npix_cols or opts.npix, opts.pixw or opts.pix_dim
@@ -478,10 +477,10 @@ function M.NewSheet (opts)
 			end
 		end
 
-		arg = sheet:Commit()
+		data = sheet:Commit()
 	end
 
-	return sheet, arg
+	return sheet, data
 end
 
 -- Cache module members.
