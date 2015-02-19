@@ -55,28 +55,6 @@ local Tiles = FROM
 -- Tile count --
 local NumTiles = #Tiles
 
--- Largest tile mask; count of mask bits; index of "full" tile --
-local Mask, NumBits, FullIndex = 1, 1
-
--- Find the "full" tile, invert the array, and compute the mask.
-do
-	local full = -1
-
-	for i = NumTiles, 1, -1 do
-		local tile = Tiles[i]
-
-		if tile > full then
-			FullIndex, full = i, tile
-		end
-
-		Tiles[tile], Tiles[i] = i
-	end
-
-	repeat
-		Mask, NumBits = Mask + Mask, NumBits + 1
-	until Mask + Mask > full
-end
-
 -- --
 local CellCache = {}
 
@@ -340,6 +318,164 @@ end
 
 ]=]
 
+-- Turns flags into a 2D grid 
+local function PrepWorkspace (work, mask, nbits, flags)
+	for i = nbits, 1, -1 do
+		if flags >= mask then
+			work[i], flags = true, flags - mask
+		else
+			work[i] = false
+		end
+
+		mask = .5 * mask
+	end
+
+	return true
+end
+
+-- Converts the array to a map, finds the largest mask / bit count, and gets the "full" mask index
+local function ResolveData (data)
+	-- Invert the array, finding the "full" mask along the way.
+	local new, full = {}, -1
+
+	for i, index in ipairs(data) do
+		if index > full then
+			full = index
+		end
+
+		new[index] = i
+	end
+
+	-- Find the "full" mask and associated bit count.
+	local full_mask, nbits, next_mask = 1, 1, 2
+
+	repeat
+		full_mask, next_mask, nbits = next_mask, 2 * next_mask, nbits + 1
+	until next_mask > full
+
+	return new, full_mask, nbits, new[full]
+end
+
+
+--- DOCME
+-- @callable get_object
+-- @uint dim
+-- @uint w
+-- @uint h
+-- @uint ncols
+-- @uint nrows
+-- @ptable[opt] opts
+-- @todo ^^^ May need revision!
+-- @treturn function F
+-- @treturn function G
+function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
+	local sheet, data = _NewSheet_(opts)
+	local map, mask, nbits, full_index = ResolveData(data)
+
+	-- Have to do some npix / npix_cols / npix_rows stuff here...
+	-- ...and pix / pixw / pixh
+
+	local work = {}
+
+	local reel, clear, full = _NewReel_(dim, w / ncols, h / nrows, opts), Clear, Full
+	local cleared, dirty_cells, ndirty, id = {}, {}, 0, 0
+	local pitch, total = ncols + 2, (ncols + 2) * (nrows + 2)
+	local correct = Correction(pitch, total, opts and opts.wrap)
+
+	if opts and opts.flip_color then
+		clear, full = Full, Clear
+	end
+
+	return function(col, row, clear)
+		--[[
+		-- If a cell is dirtied, flip its state, then add each of the four affected display
+		-- object cells (i.e. one per corner) to a dirty list. This is done implicitly, since all
+		-- four can be rebuilt from a given corner; the column and row corresponding to the chosen
+		-- corner are stored, in order to forgo some later recomputation.
+		if col >= 1 and col <= ncols and row >= 1 and row <= nrows then
+			local index = row * pitch + col + 1
+			local not_clear = not cleared[index]
+
+			if not_clear ~= not clear then
+				dirty_cells[ndirty + 1] = index
+				dirty_cells[ndirty + 2] = col
+				dirty_cells[ndirty + 3] = row
+
+				ndirty, cleared[index] = ndirty + 3, not_clear
+			end
+		end
+		]]
+	end, function(arg)
+		--[[
+		if ndirty > 0 then
+			-- Visit each dirty cell, building up a state from the cell's corners.
+			for i = 1, ndirty, 3 do
+				local index, col, row = unpack(dirty_cells, i, i + 2)
+				local cindex, ccol, crow = index, col, row
+
+				for j = 1, 4 do
+					if dirty_cells[-cindex] ~= id then
+						local ul = cleared[correct(index - pitch - 1, col - 1, row - 1)] and UL or None
+						local ur = cleared[correct(index - pitch, ccol, row - 1)] and UR or None
+						local ll = cleared[correct(index - 1, col - 1, crow)] and LL or None
+						local lr = cleared[cindex] and LR or None
+						local state = ul + ur + ll + lr
+
+						-- If all corners were cleared, a cell's object becomes invisible. Otherwise, the
+						-- object remains (or becomes) visible.
+						local object = get_object(ccol, crow, ncols, nrows, arg)
+
+						if object then
+							object.isVisible = state ~= clear
+
+							-- If a cell is full, there is nothing to mask.
+							if state == full then
+								object:setMask(nil)
+
+							-- Otherwise, apply the mask at the given frame. (For empty cells, it is enough
+							-- that the object was made invisible.)
+							elseif state ~= clear then
+								reel("set", object, state)
+							end
+						end
+
+						-- Mark the cell as visited.
+						dirty_cells[-cindex] = id
+					end
+
+					-- Step to another corner.
+					if j < 4 then
+						local dc = 2 - j
+
+						if dc ~= 0 then
+							index, col = index + dc, col + dc
+						else
+							index, row = index + pitch, row + 1
+						end
+
+						--
+						if correct ~= DefCorrect then
+							cindex, ccol, crow = correct(index, col <= ncols, row <= nrows)
+							ccol, crow = ccol or col, crow or row
+						else
+							cindex, ccol, crow = index, col, row
+						end
+					end
+				end
+			end
+
+			-- Update the ID and invalidate one cell.
+			id, ndirty, dirty_cells[-(id + 1)] = (id + 1) % total, 0
+			]]
+		end
+	end
+end
+
+
+
+
+
+
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
@@ -442,6 +578,7 @@ function M.NewSheet (opts)
 
 						break
 					end
+					-- TODO: ^^^ Instead of breaking, increment filament count for each violation
 				end
 
 			-- Otherwise, if the pattern was intact on the previous step, either it remains
@@ -451,10 +588,14 @@ function M.NewSheet (opts)
 			elseif is_intact then
 				skip_test = true
 				is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
+				-- TODO: Reduce filaments if possible
+				-- TODO: Add filaments if necessary
 			end
 
 			-- Integrity check: ensure that no filaments exist. The pattern is considered to
 			-- be intact when this condition is satisfied.
+			-- TODO: There must be a way to do this incrementally with some counters and flags
+			-- Gray code would still keep it sane; "is_intact", then, is when nfilaments = 0
 			if not skip_test then
 				is_intact = true
 
