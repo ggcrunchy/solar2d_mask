@@ -110,26 +110,6 @@ end
 -- --
 local BlocksProcessed = {}
 
--- --
-local Workspace = {}
-
---
-local function PrepWorkspace (flags)
-	local mask = Mask
-
-	for i = NumBits, 1, -1 do
-		if flags >= mask then
-			Workspace[i], flags = true, flags - mask
-		else
-			Workspace[i] = false
-		end
-
-		mask = .5 * mask
-	end
-
-	return true
-end
-
 --- DOCME
 function M.UpdateBlocks ()
 	-- Order the list, for easy detection of duplicates.
@@ -318,6 +298,14 @@ end
 
 ]=]
 
+--
+local function GetPixAndDim (opts, npix_name, dim_name)
+	local dim = opts[dim_name] or opts.dim
+	local npix = opts[npix_name] or opts.npix
+
+	return npix, 1 / npix
+end
+
 -- Turns flags into a 2D grid 
 local function PrepWorkspace (work, mask, nbits, flags)
 	for i = nbits, 1, -1 do
@@ -370,13 +358,13 @@ end
 -- @treturn function G
 function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 	local sheet, data = _NewSheet_(opts)
-	local map, mask, nbits, full_index = ResolveData(data)
+	local work, map, mask, nbits, full_index = {}, ResolveData(data)
+	local cols, cfrac, pixw = GetPixAndDim(opts, "npix_cols", "pixw")
+	local rows, rfrac, pixh = GetPixAndDim(opts, "npix_rows", "pixh")
+	-- ^^ This is where the 4's and .25's in the code originate (cols = 4, rows = 4)
+	-- ^^ Not sure if pixw / pixh are useful (maybe to find scale?)
 
-	-- Have to do some npix / npix_cols / npix_rows stuff here...
-	-- ...and pix / pixw / pixh
-
-	local work = {}
-
+--[[
 	local reel, clear, full = _NewReel_(dim, w / ncols, h / nrows, opts), Clear, Full
 	local cleared, dirty_cells, ndirty, id = {}, {}, 0, 0
 	local pitch, total = ncols + 2, (ncols + 2) * (nrows + 2)
@@ -385,7 +373,7 @@ function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 	if opts and opts.flip_color then
 		clear, full = Full, Clear
 	end
-
+]]
 	return function(col, row, clear)
 		--[[
 		-- If a cell is dirtied, flip its state, then add each of the four affected display
@@ -465,9 +453,9 @@ function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 			end
 
 			-- Update the ID and invalidate one cell.
-			id, ndirty, dirty_cells[-(id + 1)] = (id + 1) % total, 0
-			]]
+			id, ndirty, dirty_cells[-(id + 1)] = (id + 1) % total, 0	
 		end
+		]]
 	end
 end
 
