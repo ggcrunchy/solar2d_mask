@@ -169,6 +169,7 @@ function M.NewGrid (get_object, dim, w, h, ncols, nrows, opts)
 								reel("set", object, state)
 							end
 						end
+						-- ^^^ All in one operation, now
 
 						-- Mark the cell as visited.
 						dirty_cells[-cindex] = id
