@@ -349,11 +349,6 @@ function M.NewGrid (get_object, w, h, ncols, nrows, opts)
 	end
 end
 
-
-
-
-
-
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
@@ -389,11 +384,6 @@ function M.NewSheet (opts)
 		-- Checks if both neighbors are in use
 		local function CheckBoth (from, dir1, dir2)
 			return in_use[from[dir1]] and in_use[from[dir2]]
-		end
-
-		-- Checks if either neighbor is in use
-		local function CheckEither (from, dir1, dir2)
-			return in_use[from[dir1]] or in_use[from[dir2]]
 		end
 
 		-- If not just getting data, create the frame logic.
@@ -436,9 +426,9 @@ function M.NewSheet (opts)
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 		-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 		-- code order maintains pattern coherency, which simplifies update handling.
-		local prev_gray, is_white, is_intact = 0, not not opts.flip_color
+		local nviolations, prev_gray, is_white = 0, 0, not not opts.flip_color
 
-		for gval in gray.FirstN(2 ^ (ncols * nrows), 0) do -- skip 0
+		for gval in gray.FirstN(2 ^ (ncols * nrows) - 1, 0) do -- skip 0
 			-- Update Gray value-associated state.
 			local diff, from, skip_test = gval - prev_gray
 			local added = diff > 0
@@ -446,48 +436,38 @@ function M.NewSheet (opts)
 
 			from, in_use[at], prev_gray = neighbors[at], added, gval
 
-			-- If a bit was removed, check whether any of the associated element's neighbors
-			-- became (or already were) filaments. In that case, the pattern is not intact,
-			-- so any integrity check would be redundant.
-			if not added then
-				for dir, next in pairs(from) do
-					if in_use[next] and not in_use[neighbors[next][dir]] then
-						skip_test, is_intact = true, false
+			-- If a bit was removed, check whether any of the associated element's neighbors became
+			-- filaments, incrementing the violation count accordingly. If none were found, there are
+			-- three possible scenarios: the element was on the edge of a "thick" slab; it was between
+			-- two such slabs; or it was isolated. In the third case, where the element itself was a
+			-- filament, the violation count is reduced.
 
-						break
+			-- The situations are reversed when a bit is added. If the corresponding element coalesced
+			-- with other elements, filaments may have become slabs, thus decrementing the violation
+			-- count. Otherwise, the new element being a filament, the count is increased.
+			local dir1, dir2, inc = "left", "right", added and 1 or -1
+
+			for _ = 1, 2 do
+				local n1, n2 = from[dir1], from[dir2]
+				local u1, u2 = in_use[n1], in_use[n2]
+
+				if u1 or u2 then
+					if u1 and not in_use[neighbors[n1][dir1]] then
+						nviolations = nviolations - inc
 					end
-					-- TODO: ^^^ Instead of breaking, increment filament count for each violation
+
+					if u2 and not in_use[neighbors[n2][dir2]] then
+						nviolations = nviolations - inc
+					end
+				else
+					nviolations = nviolations + inc
 				end
 
-			-- Otherwise, if the pattern was intact on the previous step, either it remains
-			-- so (i.e. the added element coaelesced with a larger region) or, at worst, a
-			-- single-element filament is introduced. In either case, no integrity check is
-			-- necessary. If the pattern was broken, on the other hand, proceed with it.
-			elseif is_intact then
-				skip_test = true
-				is_intact = CheckEither(from, "up", "down") and CheckEither(from, "left", "right")
-				-- TODO: Reduce filaments if possible
-				-- TODO: Add filaments if necessary
+				dir1, dir2 = "up", "down"
 			end
 
-			-- Integrity check: ensure that no filaments exist. The pattern is considered to
-			-- be intact when this condition is satisfied.
-			-- TODO: There must be a way to do this incrementally with some counters and flags
-			-- Gray code would still keep it sane; "is_intact", then, is when nfilaments = 0
-			if not skip_test then
-				is_intact = true
-
-				for i, from in ipairs(neighbors) do
-					if in_use[i] and not (CheckEither(from, "up", "down") and CheckEither(from, "left", "right")) then
-						is_intact = false
-
-						break
-					end
-				end
-			end
-
-			-- Intact pattern: submit its texels (or data) to the mask sheet.
-			if is_intact then
+			-- No violations: submit filament-free pattern (or data) to the mask sheet.
+			if nviolations == 0 then
 				if method == "NewSheet" then
 					sheet:AddFrame(MakeFrame, gval, is_white, After)
 				else
