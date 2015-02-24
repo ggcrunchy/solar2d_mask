@@ -27,10 +27,7 @@
 -- Standard library imports --
 local floor = math.floor
 local ipairs = ipairs
-local pairs = pairs
-local rawset = rawset
 local remove = table.remove
-local setmetatable = setmetatable
 local sort = table.sort
 
 -- Modules --
@@ -132,6 +129,12 @@ local function OnCell_Wipe (block, col, row, fmask)--, NON)
 end
 
 --
+local function GetBlock (blocks, index, ncols, nrows, work)
+	-- blocks[index] = { col = (col - 1) * NCOLS + 1, row = (row - 1) * NROWS + 1, flags = 2 * work.mask - 1 }
+	-- ^^ Could put mask in blocks itself, not bother with flags yet?
+end
+
+--
 local function GetPixAndDim (opts, npix_name, dim_name)
 	local dim = opts[dim_name] or opts.dim
 	local npix = opts[npix_name] or opts.npix
@@ -140,15 +143,17 @@ local function GetPixAndDim (opts, npix_name, dim_name)
 end
 
 -- Turns flags into a 2D grid 
-local function PrepWorkspace (work, mask, nbits, flags)
-	for i = nbits, 1, -1 do
-		if flags >= mask then
-			work[i], flags = true, flags - mask
+local function PrepWorkspace (work, flags)
+	local cur_mask = work.mask
+
+	for i = work.nbits, 1, -1 do
+		if flags >= cur_mask then
+			work[i], flags = true, flags - cur_mask
 		else
 			work[i] = false
 		end
 
-		mask = .5 * mask
+		mask = .5 * cur_mask
 	end
 
 	return true
@@ -178,7 +183,7 @@ local function ResolveData (data)
 end
 
 --
-local function UpdateBlocks (blocks, processed, work, map, mask, nbits, ncols, nrows, sheet, get_object)
+local function UpdateBlocks (blocks, processed, work, map, ncols, nrows, sheet, get_object)
 	-- Order the list, for easy detection of duplicates.
 	sort(processed)
 
@@ -189,37 +194,31 @@ local function UpdateBlocks (blocks, processed, work, map, mask, nbits, ncols, n
 		local block_index = remove(processed)
 
 		if block_index ~= prev_block then
-			local block = blocks[block_index] -- Lazily allocate? (Mask + Mask) - 1
+			local block = blocks[block_index] or GetBlock(blocks, block_index, ncols, nrows, work)
 			local flags, prepped = block.flags
 
 			-- Decompose the block until it matches a tile.
 			while not map[flags] and flags ~= 0 do
-				local flag, index = 1, 1
-
 				-- On the first iteration, prep the workspace. Reset the flags, which will be
 				-- built up over this iteration.
-				-- PrepWorkspace (work, mask, nbits, flags)
-				flags, prepped = 0, prepped or PrepWorkspace(work, mask, nbits, flags)
+				flags, prepped = 0, prepped or PrepWorkspace(work, flags)
 
-				-- Remove any thin strips.
-				for row = 1, nrows do -- NROWS
+				-- Remove any filaments.
+				local flag, index = 1, 1
+
+				for _ = 1, nrows do -- NROWS
 					for col = 1, ncols do -- NCOLS
 						if work[index] then
-							local passed, lcheck, rcheck = work[index - ncols] or work[index + ncols] -- NCOLS
+							local passed = work[index - ncols] or work[index + ncols] -- NCOLS
 
-							if passed then
-								lcheck = col > 1 and work[index - 1]
-								rcheck = col < ncols and work[index + 1] -- NCOLS
-							end
-
-							if passed and (lcheck or rcheck) then
+							if passed and (col > 1 and work[index - 1]) or (col < ncols and work[index + 1]) then
 								flags = flags + flag
 							else
 								work[index] = false
 							end
 						end
 
-						flag, index = flag + flag, index + 1
+						flag, index = 2 * flag, index + 1
 					end
 				end
 			end
@@ -227,7 +226,7 @@ local function UpdateBlocks (blocks, processed, work, map, mask, nbits, ncols, n
 			-- Update the tile acoording to the new block flags.
 			block.flags = flags
 
-			local object = get_object()--ccol, crow, ncols, nrows, arg)
+			local object = get_object()--ccol, crow, ncols, nrows, arg) <- block.col, block.row, ncols, nrows, arg
 
 			if object then
 				sheet:Set(object, map[flags])
@@ -302,7 +301,7 @@ function M.NewGrid (get_object, w, h, ncols, nrows, opts)
 
 	--
 	local ncells, wrapper, cells = 0, match_slot_id.Wrap({}, ncols * nrows)
-	local blocks, processed, work = {}, {}, {}
+	local blocks, processed, work = {}, {}, { mask = mask, nbits = nbits }
 
 	if opts.flip_color then
 		sheet:BindPatterns(map[full_index], 0)
@@ -310,14 +309,10 @@ function M.NewGrid (get_object, w, h, ncols, nrows, opts)
 		sheet:BindPatterns(0, map[full_index])
 	end
 --[[
-	local reel, clear, full = _NewReel_(dim, w / ncols, h / nrows, opts), Clear, Full
-	local cleared, dirty_cells, ndirty, id = {}, {}, 0, 0
+	local reel = _NewReel_(dim, w / ncols, h / nrows, opts)
+	local cleared = {}
 	local pitch, total = ncols + 2, (ncols + 2) * (nrows + 2)
 	local correct = Correction(pitch, total, opts and opts.wrap)
-
-	if opts and opts.flip_color then
-		clear, full = Full, Clear
-	end
 ]]
 	return function(col, row, clear)
 		-- If a cell is dirtied, flip its state, then add each of the four affected display
@@ -335,12 +330,12 @@ function M.NewGrid (get_object, w, h, ncols, nrows, opts)
 				cells[ncells + 1], cells[ncells + 2], ncells = col, row, ncells + 2
 			end
 
-			-- ndirty, cleared[index] = ndirty + 3, not_clear
+			-- cleared[index] = not_clear
 		end
 	end, function(arg)
 		if ncells > 0 then
 			VisitCells(blocks, cells, ncells, ncols, cols, rows, cfrac, rfrac)--, how)
-			UpdateBlocks(blocks, processed, work, map, mask, nbits, ncols, nrows, sheet, get_object)
+			UpdateBlocks(blocks, processed, work, map, ncols, nrows, sheet, get_object)
 
 			wrapper("begin_generation")
 
