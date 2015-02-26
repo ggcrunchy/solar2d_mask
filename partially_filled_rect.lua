@@ -110,10 +110,10 @@ local function OnCell_Wipe (block, col, row, fmask, alt, action)
 end
 
 --
-local function GetCountsAndPix (opts, count_name, npix_name)
-	local npix = opts[npix_name] or opts.npix
+local function GetCountsAndPix (opts, count_name, npix_spr_name)
+	local npix = mask.GetPixInt(opts, npix_spr_name, "npix_sprite")
 
-	return opts[count_name] or opts.count, npix, 1 / npix
+	return mask.GetPixInt(opts, count_name, "count"), npix, 1 / npix
 end
 
 -- Turns flags into a 2D grid 
@@ -286,10 +286,14 @@ end
 -- @treturn function F
 -- @treturn function G
 function M.NewGrid (get_object, opts)
+	-- Fail early if these are missing, in case a long-running sheet construction occurs.
+	-- ^^^ TODO Maybe this can be incorporated into mask.NewSheet(), e.g. with a grid callback?
+	local bcols, pix_cols, cfrac = GetCountsAndPix(opts, "ncols", "npix_sprite_cols")
+	local brows, pix_rows, rfrac = GetCountsAndPix(opts, "nrows", "npix_sprite_rows")
+
+	--
 	local sheet, data = _NewSheet_(opts)
 	local map, mask, nbits, full_index = ResolveData(data)
-	local bcols, pix_cols, cfrac = GetCountsAndPix(opts, "ncols", "npix_cols")
-	local brows, pix_rows, rfrac = GetCountsAndPix(opts, "nrows", "npix_rows")
 	local ncols, nrows = bcols * pix_cols, brows * pix_rows
 -- get_object...
 	--
