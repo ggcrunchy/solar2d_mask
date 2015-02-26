@@ -292,8 +292,8 @@ function M.NewGrid (get_object, opts)
 	local brows, pix_rows, rfrac = GetCountsAndPix(opts, "nrows", "npix_sprite_rows")
 
 	--
-	local sheet, data = _NewSheet_(opts)
-	local map, mask, nbits, full_index = ResolveData(data)
+	local sheet = _NewSheet_(opts)
+	local map, mask, nbits, full_index = ResolveData(sheet:GetData())
 	local ncols, nrows = bcols * pix_cols, brows * pix_rows
 -- get_object...
 	--
@@ -466,10 +466,10 @@ function M.NewSheet (opts)
 			end
 		end
 
-		data = sheet:Commit()
+		sheet:Commit()
 	end
 
-	return sheet, data
+	return sheet
 end
 
 -- Cache module members.
