@@ -376,7 +376,7 @@ function M.NewSheet (opts)
 		-- If not just getting data, create the frame logic.
 		local After, MakeFrame
 
-		if method == "NewSheet" then
+		if method == "NewSheet_Grid" then
 			-- After function: clean up stash
 			function After (cgroup)
 				for i = cgroup.numChildren, 1, -1 do
@@ -455,7 +455,7 @@ function M.NewSheet (opts)
 
 			-- No violations: submit filament-free pattern (or data) to the mask sheet.
 			if nviolations == 0 then
-				if method == "NewSheet" then
+				if method == "NewSheet_Grid" then
 					sheet:AddFrame(MakeFrame, gval, is_white, After)
 				else
 					sheet:AddFrame(gval)
