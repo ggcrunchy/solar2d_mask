@@ -28,7 +28,6 @@
 local floor = math.floor
 local ipairs = ipairs
 local remove = table.remove
---local sort = table.sort
 
 -- Modules --
 local require_ex = require("tektite_core.require_ex")
@@ -110,10 +109,10 @@ local function OnCell_Wipe (block, col, row, fmask, alt, action)
 end
 
 --
-local function GetCountsAndPix (opts, count_name, npix_spr_name)
-	local npix = mask.GetPixInt(opts, npix_spr_name, "npix_sprite")
+local function GetCountsAndPix (reader, count_name, npix_spr_name)
+	local npix = reader(npix_spr_name)
 
-	return mask.GetPixInt(opts, count_name, "count"), npix, 1 / npix
+	return reader(count_name), npix, 1 / npix
 end
 
 -- Turns flags into a 2D grid 
@@ -286,14 +285,11 @@ end
 -- @treturn function F
 -- @treturn function G
 function M.NewGrid (get_object, opts)
-	-- Fail early if these are missing, in case a long-running sheet construction occurs.
-	-- ^^^ TODO Maybe this can be incorporated into mask.NewSheet(), e.g. with a grid callback?
+	--
+	local sheet, reader = _NewSheet_(opts)
+	local map, mask, nbits, full_index = ResolveData(sheet:GetData())
 	local bcols, pix_cols, cfrac = GetCountsAndPix(opts, "ncols", "npix_sprite_cols")
 	local brows, pix_rows, rfrac = GetCountsAndPix(opts, "nrows", "npix_sprite_rows")
-
-	--
-	local sheet = _NewSheet_(opts)
-	local map, mask, nbits, full_index = ResolveData(sheet:GetData())
 	local ncols, nrows = bcols * pix_cols, brows * pix_rows
 -- get_object...
 	--
@@ -348,12 +344,13 @@ function M.NewSheet (opts)
 
 	opts.name, opts.dimx, opts.dimy, opts.dim = "PartiallyFilledRect"
 
-	local method = opts.get_data and "NewSheet_Data" or "NewSheet"
+	local method = opts.get_data and "NewSheet_Data" or "NewSheet_Grid"
 	local sheet, data = mask[method](opts), opts.data
 
 	if not sheet:IsLoaded() then
-		local ncols, pixw = opts.npix_cols or opts.npix, opts.pixw or opts.pix_dim
-		local nrows, pixh = opts.npix_rows or opts.npix, opts.pixh or opts.pix_dim
+		local reader = mask.NewReader(opts)
+		local ncols, pixw = reader("npix_cols"), reader("pixw")
+		local nrows, pixh = reader("npix_rows"), reader("pixh")
 
 		-- Begin with all elements unused. Store neighbor indices for quick lookup.
 		local in_use, neighbors, ni = {}, {}, 1
