@@ -288,8 +288,8 @@ function M.NewGrid (get_object, opts)
 	--
 	local sheet, reader = _NewSheet_(opts)
 	local map, mask, nbits, full_index = ResolveData(sheet:GetData())
-	local bcols, pix_cols, cfrac = GetCountsAndPix(opts, "ncols", "npix_sprite_cols")
-	local brows, pix_rows, rfrac = GetCountsAndPix(opts, "nrows", "npix_sprite_rows")
+	local bcols, pix_cols, cfrac = GetCountsAndPix(reader, "ncols", "npix_sprite_cols")
+	local brows, pix_rows, rfrac = GetCountsAndPix(reader, "nrows", "npix_sprite_rows")
 	local ncols, nrows = bcols * pix_cols, brows * pix_rows
 -- get_object...
 	--
@@ -338,6 +338,7 @@ end
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
+-- @treturn function READER
 -- @return ARG
 function M.NewSheet (opts)
 	opts = table_funcs.Copy(opts)
@@ -345,10 +346,9 @@ function M.NewSheet (opts)
 	opts.name, opts.dimx, opts.dimy, opts.dim = "PartiallyFilledRect"
 
 	local method = opts.get_data and "NewSheet_Data" or "NewSheet_Grid"
-	local sheet, data = mask[method](opts), opts.data
+	local sheet, data, reader = mask[method](opts), opts.data, mask.NewReader(opts)
 
 	if not sheet:IsLoaded() then
-		local reader = mask.NewReader(opts)
 		local ncols, pixw = reader("npix_cols"), reader("pixw")
 		local nrows, pixh = reader("npix_rows"), reader("pixh")
 
@@ -466,7 +466,7 @@ function M.NewSheet (opts)
 		sheet:Commit()
 	end
 
-	return sheet
+	return sheet, reader
 end
 
 -- Cache module members.
