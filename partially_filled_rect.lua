@@ -32,7 +32,7 @@ local remove = table.remove
 -- Modules --
 local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
-local log2 = require_ex.Lazy("bitwise_ops.log2")
+local grid_funcs = require("tektite_core.array.grid")
 local mask = require("corona_utils.mask")
 local match_slot_id = require("tektite_core.array.match_slot_id")
 local table_funcs = require("tektite_core.table.funcs")
@@ -291,6 +291,7 @@ function M.NewGrid (get_object, opts)
 	local bcols, pix_cols, cfrac = GetCountsAndPix(reader, "ncols", "npix_sprite_cols")
 	local brows, pix_rows, rfrac = GetCountsAndPix(reader, "nrows", "npix_sprite_rows")
 	local ncols, nrows = bcols * pix_cols, brows * pix_rows
+
 -- get_object...
 	--
 	local nblocks = ncols * nrows
@@ -308,8 +309,13 @@ function M.NewGrid (get_object, opts)
 	else
 		sheet:BindPatterns(0, map[full_index])
 	end
-
+print("BCOLS, PIXCOLS", bcols, pix_cols)
+print("BROWS, PIXROWS", brows, pix_rows)
+print("NCOLS, NROWS", ncols, nrows)
+print("")
 	--
+	local check_grid = grid_funcs.GridChecker_Blocks(16, 16, bcols, brows, pix_cols, pix_rows)
+
 	return function(col, row)
 		-- If a cell is dirtied, flip its state, then add each of the four affected display
 		-- object cells (i.e. one per corner) to a dirty list. This is done implicitly, since all
@@ -346,7 +352,7 @@ function M.NewSheet (opts)
 	opts.name, opts.dimx, opts.dimy, opts.dim = "PartiallyFilledRect"
 
 	local method = opts.get_data and "NewSheet_Data" or "NewSheet_Grid"
-	local sheet, data, reader = mask[method](opts), opts.data, mask.NewReader(opts)
+	local sheet, reader = mask[method](opts), mask.NewReader(opts)
 
 	if not sheet:IsLoaded() then
 		local ncols, pixw = reader("npix_cols"), reader("pixw")
@@ -413,15 +419,10 @@ function M.NewSheet (opts)
 		-- "off" or "on" element), accepting any without "filaments", i.e. elements that lack
 		-- either a horizontal or vertical neighbor (or both). Iterating this stream in Gray
 		-- code order maintains pattern coherency, which simplifies update handling.
-		local nviolations, prev_gray, is_white = 0, 0, not not opts.flip_color
+		local nviolations, is_white = 0, not not opts.flip_color
 
-		for gval in gray.FirstN(2 ^ (ncols * nrows) - 1, 0) do -- skip 0
-			-- Update Gray value-associated state.
-			local diff, from = gval - prev_gray
-			local added = diff > 0
-			local at = log2.Lg_Floor(added and diff or -diff) + 1
-
-			from, in_use[at], prev_gray = neighbors[at], added, gval
+		for gval, at, added in gray.FirstN_Change(2 ^ (ncols * nrows) - 1) do
+			in_use[at] = added
 
 			-- If a bit was removed, check whether any of the associated element's neighbors became
 			-- filaments, incrementing the violation count accordingly. If none were found, there are
@@ -432,7 +433,7 @@ function M.NewSheet (opts)
 			-- The situations are reversed when a bit is added. If the corresponding element coalesced
 			-- with other elements, filaments may have become slabs, thus decrementing the violation
 			-- count. Otherwise, the new element being a filament, the count is increased.
-			local dir1, dir2, inc = "left", "right", added and 1 or -1
+			local from, dir1, dir2, inc = neighbors[at], "left", "right", added and 1 or -1
 
 			for _ = 1, 2 do
 				local n1, n2 = from[dir1], from[dir2]
