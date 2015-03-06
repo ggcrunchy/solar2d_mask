@@ -26,14 +26,13 @@
 
 -- Standard library imports --
 local floor = math.floor
-local ipairs = ipairs
 local remove = table.remove
 
 -- Modules --
 local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
--- local grid_funcs = require("tektite_core.array.grid")
-local mask = require("corona_utils.mask")
+local grid_funcs = require("tektite_core.array.grid")
+local mask_utils = require("corona_utils.mask")
 local match_slot_id = require("tektite_core.array.match_slot_id")
 local table_funcs = require("tektite_core.table.funcs")
 
@@ -70,18 +69,23 @@ local function IsFilled (flags, fmask)
 end
 
 --
-local function OnCell_Fill (block, col, row, fmask, alt, action)
+--[[Fill]]
+local function OnCell_Update (block, col, row, fmask, alt, action, set)
 	local flags, check = GetFlagsAndCheck(block, alt)
 
-	if not IsFilled(check, fmask) then
+	if IsFilled(check, fmask) ~= set then
+		fmask = set and fmask or -fmask
+--[[
+	if not IsFilled(check, fmask) then]]
 		block.flags = flags + fmask
 
 		if alt then
-			block.alt_flags = check + fmask
+			block.alt_flags = check + fmask -- These probably should be binary ops...
 		end
 
 		if action then
-			action("fill", col, row, alt)
+		--	action("fill", col, row, alt)
+			action("update", col, row, set, alt)
 		end
 	end
 end
@@ -119,7 +123,7 @@ local function PrepWorkspace (work, flags)
 			work[i] = false
 		end
 
-		mask = .5 * cur_mask
+		cur_mask = .5 * cur_mask
 	end
 
 	return true
@@ -128,14 +132,16 @@ end
 -- Converts the array to a map, finds the largest mask / bit count, and gets the "full" mask index
 local function ResolveData (data)
 	-- Invert the array, finding the "full" mask along the way.
-	local new, full = {}, -1
+	local frames, new, full, fi = data.frames, {}, -1, 1
 
-	for i, index in ipairs(data) do
+	for i = 1, #frames / 3 do
+		local index = frames[fi]
+
 		if index > full then
 			full = index
 		end
 
-		new[index] = i
+		new[index], fi = i, fi + 3
 	end
 
 	-- Find the "full" mask and associated bit count.
@@ -174,10 +180,10 @@ local function UpdateBlocks (blocks, processed, work, map, sheet)
 				-- Remove any filaments.
 				local flag, index = 1, 1
 
-				for _ = 1, crows do -- NROWS (pixrows)
-					for col = 1, ccols do -- NCOLS (pixcols)
+				for _ = 1, crows do
+					for col = 1, ccols do
 						if work[index] then
-							local passed = work[index - ccols] or work[index + ccols] -- NCOLS (pixcols)
+							local passed = work[index - ccols] or work[index + ccols]
 
 							if passed and ((col > 1 and work[index - 1]) or (col < ccols and work[index + 1])) then
 								flags = flags + flag
@@ -194,7 +200,7 @@ local function UpdateBlocks (blocks, processed, work, map, sheet)
 			-- Update the tile acoording to the new block flags.
 			block.flags = flags
 
-			sheet:Set_Cell(block.col, block.row, map[flags])
+			sheet:Set_Cell(block.col, block.row, flags)
 
 				-- image.width = 16 -- shouldn't be our responsibility...
 				-- image.height = 16
@@ -205,43 +211,67 @@ local function UpdateBlocks (blocks, processed, work, map, sheet)
 end
 
 --
-local function FracRem (frac, count, num)
-	local quot = floor(frac * (num - 1))
+local function FracRem (frac, cells_per_block, coord)
+	local quot = floor(frac * (coord - 1))
 
-	return num, quot, num - (quot * count + 1)
+	return coord, quot, coord - (quot * cells_per_block + 1)
 end
 
 --
-local function VisitCells (blocks, block_wrap, cells, ncells, processed, how, action, alt)
-	-- Choose the appropriate operations and argument.
-	local on_acquire_block, on_cell, ab_arg, cell_arg
+local function ChooseArg (opts, key)
+	local arg = opts[key]
 
-	if how == "fill" or how == "wipe" then
+	if arg ~= nil then
+		return arg
+	else
+		return opts.arg
+	end
+end
+
+--
+local function VisitCells (blocks, block_wrap, cells, ncells, processed, opts)--how, action, alt)
+	-- Choose the appropriate operations and argument.
+	local on_acquire_block, on_cell, ab_arg, cell_arg, action, alt
+--[[
+	if how ~= "func" then--"fill" or how == "wipe" then
 		on_acquire_block = OnAcquireBlock_Process
 		on_cell = how == "fill" and OnCell_Fill or OnCell_Wipe
 		ab_arg, cell_arg = processed, alt
 	else
 		on_acquire_block, on_cell = OnAcquireBlock_Func, OnCell_Func
 		ab_arg, cell_arg = how, how
+	end]]
+	if opts then
+		on_acquire_block, on_cell = opts.on_acquire_block, opts.on_cell
+		action, alt = opts.action, opts.alt
+	end
+
+	if on_acquire_block or on_cell then
+		ab_arg, cell_arg = ChooseArg(opts, "ab_arg"), ChooseArg(opts, "cell_arg")
+	else
+		on_acquire_block, on_cell = OnAcquireBlock_Process, OnCell_Update --Fill
+		ab_arg, cell_arg = processed, alt
 	end
 
 	-- Visit each unique index and compact the list. <- TODO: Rewrite
 --	local clo, rlo, chi, rhi, block, prev = 0, 0, -1, -1
 	local ccols, crows = blocks.ccols, blocks.crows
 	local cfrac, rfrac = cells.cfrac, cells.rfrac
-	local ncols, mask = blocks.ncols, blocks.mask
+	local bcols, bmask = blocks.bcols, blocks.mask
 
 	for i = 1, ncells, 3 do
 		local col, bcol, coff = FracRem(cfrac, ccols, cells[i])
 		local row, brow, roff = FracRem(rfrac, crows, cells[i + 1])
-		local bindex = brow * ncols + bcol + 1
+		local bindex = brow * bcols + bcol + 1
 
 		if block_wrap("mark", bindex) then
-			local block = blocks[bindex] or { col = (col - 1) * ccols + 1, row = (row - 1) * crows + 1, flags = mask } -- factors necessary?
+			local block = blocks[bindex] or { col = bcol, row = brow, flags = bmask }
 
 			blocks[bindex] = block
 
-			on_acquire_block(bindex, ab_arg)
+			if on_acquire_block then
+				on_acquire_block(bindex, ab_arg)
+			end
 		end
 --[[
 		--
@@ -262,9 +292,11 @@ local function VisitCells (blocks, block_wrap, cells, ncells, processed, how, ac
 		-- However, could just do another match-slot-id
 
 		--
-		local power = --[[(row - rlo)]]roff * ccols + coff--(col - clo) -- NCOLS (pixcols)
+		if on_cell then
+			local power = --[[(row - rlo)]]roff * ccols + coff--(col - clo) -- NCOLS (pixcols)
 
-		on_cell(blocks[bindex], col, row, 2^power, cell_arg, action)
+			on_cell(blocks[bindex], col, row, 2^power, cell_arg, action, cells[i + 2])
+		end
 	end
 end
 
@@ -272,6 +304,7 @@ end
 -- @ptable[opt] opts
 -- @treturn function F
 -- @treturn function G
+-- @treturn ?function H
 function M.NewGrid (opts)
 	--
 	local sheet, reader = _NewSheet_(opts)
@@ -283,12 +316,12 @@ function M.NewGrid (opts)
 	--
 	local nblocks = ncols * nrows
 	local ncells, cell_wrap, cells = 0, match_slot_id.Wrap({
-		cfrac = 1 / cellw, rfrac = 1 / cellh
+		cfrac = 1 / ccols, rfrac = 1 / crows
 	}, nblocks * (ncols * nrows))
 	local block_wrap, blocks = match_slot_id.Wrap({
-		ccols = ccols, crows = crows, ncols = ncols, mask = 2 * mask + 1
-	}, nblocks)
-	local processed, work = {}, { nbits = nbits }
+		ccols = ccols, crows = crows, bcols = bcols, mask = 2 * mask - 1
+	}, bcols * brows)--nblocks)
+	local processed, work = {}, { mask = mask, nbits = nbits }
 
 	--
 	if opts.flip_color then
@@ -298,33 +331,36 @@ function M.NewGrid (opts)
 	end
 
 	--
---	local check_grid = grid_funcs.GridChecker_Blocks(cellw, cellh, bcols, brows, ccols, crows)
+	local get_cell = opts.get_cell
 
-	return function(col, row, clear)
-		-- If a cell is dirtied, flip its state, then add each of the four affected display
-		-- object cells (i.e. one per corner) to a dirty list. This is done implicitly, since all
-		-- four can be rebuilt from a given corner; the column and row corresponding to the chosen
-		-- corner are stored, in order to forgo some later recomputation.
+	if get_cell == "blocks" then
+		get_cell = grid_funcs.GridChecker_Blocks(bcols * cellw, brows * cellh, bcols, brows, ccols, crows)
+	elseif get_cell == "grid" then
+		get_cell = grid_funcs.GridChecker(cellw / ccols, cellh / crows, bcols * ccols, brows * crows)
+	else
+		get_cell = nil
+	end
 
+	--
+	return function(col, row, how)
+		if col >= 1 and col <= ncols and row >= 1 and row <= nrows then
+			local set = how ~= "clear"
 
-		if col >= 1 and col <= ncols and row >= 1 and row <= nrows then -- pixdims
-			local set = not clear
-
-			if cell_wrap("set", (row - 1) * ncols + col, set) then -- pixcols
+		--	if cell_wrap("set", (row - 1) * ncols + col, set) then
 				cells[ncells + 1], cells[ncells + 2], cells[ncells + 3], ncells = col, row, set, ncells + 3
-			end
+		--	end
 		end
-	end, function(how, action, alt)
+	end, function(opts)--how, action, alt)
 		if ncells > 0 then
-			VisitCells(blocks, block_wrap, cells, ncells, processed, how, action, alt)
+			VisitCells(blocks, block_wrap, cells, ncells, processed, opts)--how, action, alt)
 			UpdateBlocks(blocks, processed, work, map, sheet)
 
-			cell_wrap("begin_generation")
+		--	cell_wrap("begin_generation")
 			block_wrap("begin_generation")
 
 			ncells = 0
 		end
-	end
+	end, get_cell
 end
 
 --- DOCME
@@ -338,7 +374,7 @@ function M.NewSheet (opts)
 	opts.name, opts.dimx, opts.dimy, opts.dim = "PartiallyFilledRect"
 -- TODO: What were the "dim?" fields?
 	local method = opts.get_data and "NewSheet_Data" or "NewSheet_Grid"
-	local sheet, reader = mask[method](opts), mask.NewReader(opts)
+	local sheet, reader = mask_utils[method](opts), mask_utils.NewReader(opts)
 
 	if not sheet:IsLoaded() then
 		local ncols, pixw = reader("cell_ncols"), reader("frame_unit_w")
