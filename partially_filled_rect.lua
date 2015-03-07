@@ -75,8 +75,7 @@ local function OnCell_Update (block, col, row, fmask, alt, action, set)
 
 	if IsFilled(check, fmask) ~= set then
 		fmask = set and fmask or -fmask
---[[
-	if not IsFilled(check, fmask) then]]
+
 		block.flags = flags + fmask
 
 		if alt then
@@ -84,7 +83,6 @@ local function OnCell_Update (block, col, row, fmask, alt, action, set)
 		end
 
 		if action then
-		--	action("fill", col, row, alt)
 			action("update", col, row, set, alt)
 		end
 	end
@@ -95,35 +93,18 @@ local function OnCell_Func (block, col, row, fmask, func)
 	func("cell", col, row, IsFilled(block.flags, fmask))
 end
 
---
-local function OnCell_Wipe (block, col, row, fmask, alt, action)
-	local flags, check = GetFlagsAndCheck(block, alt)
-
-	if IsFilled(check, fmask) then
-		block.flags = flags - fmask
-
-		if alt then
-			block.alt_flags = check - fmask
-		end
-
-		if action then
-			action("wipe", col, row, alt)
-		end
-	end
-end
-
 -- Turns flags into a 2D grid 
 local function PrepWorkspace (work, flags)
-	local cur_mask = work.mask
+	local mask = work.mask
 
 	for i = work.nbits, 1, -1 do
-		if flags >= cur_mask then
-			work[i], flags = true, flags - cur_mask
+		if flags >= mask then
+			work[i], flags = true, flags - mask
 		else
 			work[i] = false
 		end
 
-		cur_mask = .5 * cur_mask
+		mask = .5 * mask
 	end
 
 	return true
@@ -156,57 +137,43 @@ end
 
 --
 local function UpdateBlocks (blocks, processed, work, map, sheet)
-	-- Order the list, for easy detection of duplicates.
---	sort(processed)
-
-	-- Update the images belonging to each affected block.
---	local prev_block
-
+	-- Update the mask belonging to each affected block.
 	local ccols, crows = blocks.ccols, blocks.crows
 
 	for _ = 1, #processed do
-		local block_index = remove(processed)
+		local block = blocks[remove(processed)]
+		local flags, prepped = block.flags
 
-	--	if block_index ~= prev_block then
-			local block = blocks[block_index]
-			local flags, prepped = block.flags
+		-- Decompose the block until it matches a tile.
+		while not map[flags] and flags ~= 0 do
+			-- On the first iteration, prep the workspace. Reset the flags, which will be
+			-- built up over this iteration.
+			flags, prepped = 0, prepped or PrepWorkspace(work, flags)
 
-			-- Decompose the block until it matches a tile.
-			while not map[flags] and flags ~= 0 do
-				-- On the first iteration, prep the workspace. Reset the flags, which will be
-				-- built up over this iteration.
-				flags, prepped = 0, prepped or PrepWorkspace(work, flags)
+			-- Remove any filaments.
+			local flag, index = 1, 1
 
-				-- Remove any filaments.
-				local flag, index = 1, 1
+			for _ = 1, crows do
+				for col = 1, ccols do
+					if work[index] then
+						local passed = work[index - ccols] or work[index + ccols]
 
-				for _ = 1, crows do
-					for col = 1, ccols do
-						if work[index] then
-							local passed = work[index - ccols] or work[index + ccols]
-
-							if passed and ((col > 1 and work[index - 1]) or (col < ccols and work[index + 1])) then
-								flags = flags + flag
-							else
-								work[index] = false
-							end
+						if passed and ((col > 1 and work[index - 1]) or (col < ccols and work[index + 1])) then
+							flags = flags + flag
+						else
+							work[index] = false
 						end
-
-						flag, index = 2 * flag, index + 1
 					end
+
+					flag, index = 2 * flag, index + 1
 				end
 			end
+		end
 
-			-- Update the tile acoording to the new block flags.
-			block.flags = flags
+		-- Update the tile acoording to the new block flags.
+		block.flags = flags
 
-			sheet:Set_Cell(block.col, block.row, flags)
-
-				-- image.width = 16 -- shouldn't be our responsibility...
-				-- image.height = 16
-
-		--	prev_block = block_index
-	--	end
+		sheet:Set_Cell(block.col, block.row, flags)
 	end
 end
 
@@ -214,7 +181,7 @@ end
 local function FracRem (frac, cells_per_block, coord)
 	local quot = floor(frac * (coord - 1))
 
-	return coord, quot, coord - (quot * cells_per_block + 1)
+	return coord, quot + 1, coord - (quot * cells_per_block + 1)
 end
 
 --
@@ -230,31 +197,23 @@ end
 
 --
 local function VisitCells (blocks, block_wrap, cells, ncells, processed, opts)--how, action, alt)
-	-- Choose the appropriate operations and argument.
+	-- Choose the appropriate operation and argument.
 	local on_acquire_block, on_cell, ab_arg, cell_arg, action, alt
---[[
-	if how ~= "func" then--"fill" or how == "wipe" then
-		on_acquire_block = OnAcquireBlock_Process
-		on_cell = how == "fill" and OnCell_Fill or OnCell_Wipe
-		ab_arg, cell_arg = processed, alt
-	else
-		on_acquire_block, on_cell = OnAcquireBlock_Func, OnCell_Func
-		ab_arg, cell_arg = how, how
-	end]]
+
 	if opts then
 		on_acquire_block, on_cell = opts.on_acquire_block, opts.on_cell
 		action, alt = opts.action, opts.alt
 	end
 
 	if on_acquire_block or on_cell then
+		on_acquire_block, on_cell = OnAcquireBlock_Func, OnCell_Func
 		ab_arg, cell_arg = ChooseArg(opts, "ab_arg"), ChooseArg(opts, "cell_arg")
 	else
-		on_acquire_block, on_cell = OnAcquireBlock_Process, OnCell_Update --Fill
+		on_acquire_block, on_cell = OnAcquireBlock_Process, OnCell_Update
 		ab_arg, cell_arg = processed, alt
 	end
 
 	-- Visit each unique index and compact the list. <- TODO: Rewrite
---	local clo, rlo, chi, rhi, block, prev = 0, 0, -1, -1
 	local ccols, crows = blocks.ccols, blocks.crows
 	local cfrac, rfrac = cells.cfrac, cells.rfrac
 	local bcols, bmask = blocks.bcols, blocks.mask
@@ -262,7 +221,7 @@ local function VisitCells (blocks, block_wrap, cells, ncells, processed, opts)--
 	for i = 1, ncells, 3 do
 		local col, bcol, coff = FracRem(cfrac, ccols, cells[i])
 		local row, brow, roff = FracRem(rfrac, crows, cells[i + 1])
-		local bindex = brow * bcols + bcol + 1
+		local bindex = (brow - 1) * bcols + bcol
 
 		if block_wrap("mark", bindex) then
 			local block = blocks[bindex] or { col = bcol, row = brow, flags = bmask }
@@ -273,29 +232,10 @@ local function VisitCells (blocks, block_wrap, cells, ncells, processed, opts)--
 				on_acquire_block(bindex, ab_arg)
 			end
 		end
---[[
-		--
-		if col < clo or col > chi or row < rlo or row > rhi then
-			local bcol, brow = floor(cfrac * (col - 1)), floor(rfrac * (row - 1))
-
-			clo, rlo = bcol * cols + 1, brow * rows + 1 -- NCOLS, NROWS (pixdims)
-			chi, rhi = clo + cols - 1, rlo + rows - 1 -- NCOLS, NROWS (pixdims)
-
-			local block_index = brow * ncols + bcol + 1 -- NBLOCKCOLS (blockcols)
--- GetBlock(blocks, block_index, ncols, nrows, work)
-			block = blocks[block_index]
-
-			on_acquire_block(block_index, ab_arg)
-		end
-]]
-		-- ^^^ Argh, without sorting, this is broken :/
-		-- However, could just do another match-slot-id
 
 		--
 		if on_cell then
-			local power = --[[(row - rlo)]]roff * ccols + coff--(col - clo) -- NCOLS (pixcols)
-
-			on_cell(blocks[bindex], col, row, 2^power, cell_arg, action, cells[i + 2])
+			on_cell(blocks[bindex], col, row, 2^(roff * ccols + coff), cell_arg, action, cells[i + 2])
 		end
 	end
 end
@@ -311,16 +251,12 @@ function M.NewGrid (opts)
 	local map, mask, nbits, full_index = ResolveData(sheet:GetData())
 	local bcols, ccols, cellw = reader("grid_ncols"), reader("cell_ncols"), reader("sprite_w")
 	local brows, crows, cellh = reader("grid_nrows"), reader("cell_nrows"), reader("sprite_h")
-	local ncols, nrows = bcols * ccols, brows * crows
 
 	--
-	local nblocks = ncols * nrows
-	local ncells, cell_wrap, cells = 0, match_slot_id.Wrap({
-		cfrac = 1 / ccols, rfrac = 1 / crows
-	}, nblocks * (ncols * nrows))
 	local block_wrap, blocks = match_slot_id.Wrap({
 		ccols = ccols, crows = crows, bcols = bcols, mask = 2 * mask - 1
-	}, bcols * brows)--nblocks)
+	}, bcols * brows)
+	local ncells, cells = 0, { cfrac = 1 / ccols, rfrac = 1 / crows }
 	local processed, work = {}, { mask = mask, nbits = nbits }
 
 	--
@@ -342,20 +278,17 @@ function M.NewGrid (opts)
 	end
 
 	--
+	local ncols, nrows = bcols * ccols, brows * crows
+
 	return function(col, row, how)
 		if col >= 1 and col <= ncols and row >= 1 and row <= nrows then
-			local set = how ~= "clear"
-
-		--	if cell_wrap("set", (row - 1) * ncols + col, set) then
-				cells[ncells + 1], cells[ncells + 2], cells[ncells + 3], ncells = col, row, set, ncells + 3
-		--	end
+			cells[ncells + 1], cells[ncells + 2], cells[ncells + 3], ncells = col, row, how ~= "clear", ncells + 3
 		end
-	end, function(opts)--how, action, alt)
+	end, function(opts)
 		if ncells > 0 then
-			VisitCells(blocks, block_wrap, cells, ncells, processed, opts)--how, action, alt)
+			VisitCells(blocks, block_wrap, cells, ncells, processed, opts)
 			UpdateBlocks(blocks, processed, work, map, sheet)
 
-		--	cell_wrap("begin_generation")
 			block_wrap("begin_generation")
 
 			ncells = 0
