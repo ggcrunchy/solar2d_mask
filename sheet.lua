@@ -230,7 +230,6 @@ local function SetMask (MS, mask, frames, object, index, xscale, yscale)
 
 			object.maskX, object.maskScaleX = ceil(x * xscale), xscale
 			object.maskY, object.maskScaleY = ceil(y * yscale), yscale
-			-- ^^ ceil()?
 		end
 	end
 end
@@ -324,9 +323,10 @@ local function NewSheetBody (opts, use_grid)
 			frames[#frames + 1] = y
 
 			--
-			cgroup:insert(back)
-
 			func(cgroup, 1 - bg, fdimx, fdimy, index)
+
+			cgroup:insert(back)
+			back:toBack()
 
 			-- Capture the frame and incorporate it into the built-up mask.
 			local fcap = capture.CaptureBounds(cgroup, bounds, {
@@ -336,20 +336,9 @@ local function NewSheetBody (opts, use_grid)
 			})
 
 			mgroup:insert(fcap)
---[[
-AAA=(AAA or 0)+1
-if AAA<4 then
-vdump(fcap.contentBounds)
-display.getCurrentStage():insert(fcap)
-else
-X[7]=2
-end
---]]
-			yfunc()
-
---print(require("tektite_core.number.to_string").Binary(xx, 4, true))
-
 			cgroup.parent:insert(back)
+
+			yfunc()
 
 			--
 			if after then
