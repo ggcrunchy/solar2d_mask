@@ -29,7 +29,6 @@ local floor = math.floor
 local remove = table.remove
 
 -- Modules --
-local grid_funcs = require("tektite_core.array.grid")
 local mask_sheet = require("corona_mask.sheet")
 local mask_utils = require("corona_mask.utils")
 local match_slot_id = require("tektite_core.array.match_slot_id")
@@ -214,17 +213,6 @@ function M.NewGrid (opts)
 	end
 
 	--
-	local get_cell = opts.get_cell
-
-	if get_cell == "blocks" then
-		get_cell = grid_funcs.GridChecker_Blocks(bcols * cellw, brows * cellh, bcols, brows, ccols, crows)
-	elseif get_cell == "grid" then
-		get_cell = grid_funcs.GridChecker(cellw / ccols, cellh / crows, bcols * ccols, brows * crows)
-	else
-		get_cell = nil
-	end
-
-	--
 	local ncols, nrows = bcols * ccols, brows * crows
 
 	return function(col, row, how)
@@ -240,7 +228,7 @@ function M.NewGrid (opts)
 
 			ncells = 0
 		end
-	end, get_cell
+	end, mask_utils.GetCellFuncs(opts.get_cell, bcols, brows, ccols, crows, cellw, cellh)
 end
 
 --- DOCME

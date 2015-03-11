@@ -24,10 +24,13 @@
 --
 
 -- Standard library imports --
+local ipairs = ipairs
+local type = type
 
 -- Modules --
 local require_ex = require("tektite_core.require_ex")
 local gray = require_ex.Lazy("number_sequences.gray")
+local grid_funcs = require("tektite_core.array.grid")
 
 -- Corona globals --
 local display = display
@@ -105,6 +108,36 @@ function M.GenerateFrames (sheet, ncols, nrows, in_use, neighbors, make_frame, a
 				sheet:AddFrame(gval)
 			end
 		end
+	end
+end
+
+--
+local function AuxGetCellFuncs (how, bcols, brows, ccols, crows, cellw, cellh)
+	if how == "blocks" then
+		return grid_funcs.GridChecker_Blocks(bcols * cellw, brows * cellh, bcols, brows, ccols, crows)
+	elseif how == "cell" then
+		return grid_funcs.GridChecker_Cell(bcols * ccols, brows * crows)
+	elseif how == "grid" then
+		return grid_funcs.GridChecker(cellw / ccols, cellh / crows, bcols * ccols, brows * crows)
+	elseif how == "offset" then
+		return grid_funcs.GridChecker_Offset(cellw / ccols, cellh / crows, bcols * ccols, brows * crows)
+	elseif how == "pos_to_cell" then
+		return grid_funcs.PosToCell_Func(cellw / ccols, cellh / crows)
+	end
+end
+
+--- DOCME
+function M.GetCellFuncs (get_cell, bcols, brows, ccols, crows, cellw, cellh)
+	if type(get_cell) == "table" then
+		local funcs = {}
+
+		for _, v in ipairs(get_cell) do
+			funcs[v] = AuxGetCellFuncs(v, bcols, brows, ccols, crows, cellw, cellh)
+		end
+
+		return funcs
+	else
+		return AuxGetCellFuncs(get_cell, bcols, brows, ccols, crows, cellw, cellh)
 	end
 end
 
