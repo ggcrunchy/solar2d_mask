@@ -205,21 +205,32 @@ local function GetDims (x, y, endx, ncols, dy)
 end
 
 --
+local function GetIndexType (MS, index)
+	if index == MS.m_clear then
+		return "clear"
+	elseif index == MS.m_full then
+		return "full"
+	else
+		return "normal"
+	end
+end
+
+--
 local function GetScales (fdimx, fdimy, w, h)
 	return w / fdimx, h / fdimy
 end
 
 --
-local function SetMask (MS, mask, frames, object, index, xscale, yscale)
+local function SetMask (mask, frames, object, index, xscale, yscale, itype)
 	assert(mask, "Mask not ready")
 
-	local not_clear, frame = index ~= MS.m_clear, frames[index]
+	local not_clear, frame = itype ~= "clear", frames[index]
 
 	object.isVisible = not_clear
 
 	if not_clear then -- non-visible cells are fine as is
 		-- If a cell is full, there is nothing to mask.
-		if index == MS.m_full then
+		if itype == "full" then
 			object:setMask(nil)
 
 		-- Otherwise, apply the mask at the given frame.
@@ -432,10 +443,12 @@ local function NewSheetBody (opts, use_grid)
 	-- @pobject object
 	-- @param index
 	function MaskSheet:Set (object, index)
-		SetMask(self, mask, frames, object, index, xscale, yscale)
+		SetMask(mask, frames, object, index, xscale, yscale, GetIndexType(self, index))
 	end
 
 	if use_grid then
+		local on_get_object = opts.on_get_object
+
 		--- DOCME
 		-- @uint col
 		-- @uint row
@@ -445,7 +458,13 @@ local function NewSheetBody (opts, use_grid)
 			local object = cells[gindex]
 
 			if object then
-				SetMask(self, mask, frames, object, index, xscale, yscale)
+				local itype = GetIndexType(self, index)
+
+				if on_get_object then
+					on_get_object(object, itype, col, row, bcols, brows)
+				end
+
+				SetMask(mask, frames, object, index, xscale, yscale, itype)
 			end
 		end
 	end
